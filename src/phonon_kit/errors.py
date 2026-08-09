@@ -17,3 +17,6 @@ class ExternalProgramError(PhononKitError):
 class IncompleteResultsError(PhononKitError):
     """Required force-calculator results are not complete yet."""
 
+
+class RetryableExternalError(ExternalProgramError):
+    """A transient external-service failure that is safe to retry."""

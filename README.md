@@ -1,11 +1,11 @@
 # phonon-kit
 
-`phonon-kit` 是一个面向日常使用的有限位移声子工作流。它用一份 YAML 管理
-结构、DPA3/DPA4、VASP/DFT、声子谱、DOS 和振动热力学，并把临时文件与最终
-结果严格分开。全局命令为 `ph`。
+`phonon-kit` 是一个面向日常使用的有限位移声子与准谐近似工作流。它用 YAML
+管理结构、DPA3/DPA4、VASP/DFT、声子谱、振动热力学、多相 QHA 和 P–T 相图，
+并把临时文件与最终结果严格分开。全局命令为 `ph`。
 
-初版只做谐近似、定体积的有限位移声子。它不做 QHA、相图、VASP-DFPT、DFT
-弛豫或模型训练。
+普通 `ph run` 处理一个结构的谐声子；独立的 `ph qha` 子命令处理相同组成的多个
+晶相。项目不实现 VASP-DFPT、变组成凸包、非谐自由能、熔化或模型训练。
 
 ## 1. 安装
 
@@ -71,6 +71,9 @@ runs/sio2-001/
 
 路径均相对 `config.yaml` 解析。每份 YAML 对应一个结构，但可以同时定义多个
 DPA 模型和一个 VASP 参考。
+
+当前配置格式全部字段、默认值、单位和组合限制见
+[config.yaml 参数说明](docs/config-reference.zh-CN.md)。
 
 ### 声子参数
 
@@ -221,7 +224,55 @@ ph resume config.yaml --wait
 独立执行 `ph validate` 的推理日志保存在案例目录的
 `.phonon-kit/validation/logs/`，该目录默认被 Git 忽略。
 
-## 7. 常见问题
+## 7. 多相 QHA 与 P–T 相图
+
+QHA 使用独立配置，不会改变前述单结构声子流程。快速创建三个 SiO₂ 晶相案例：
+
+```bash
+ph qha init sio2_qha --phases quartz coesite stishovite
+cd sio2_qha
+# 替换 inputs/phases/*/POSCAR
+ph qha plan qha.yaml
+ph qha validate qha.yaml
+ph qha run qha.yaml
+ph qha status qha.yaml
+```
+
+核心流程是每个方法、每个相分别执行多个固定体积点：
+
+```text
+固定体积优化原子和晶胞形状
+→ 静态 U(V)
+→ 每个体积的有限位移声子
+→ Fvib(V,T)
+→ G(P,T)
+→ 多相最低 Gibbs 能比较
+```
+
+DPA 使用 `FrechetCellFilter(constant_volume=True)`；VASP 使用三套模板：
+`volume_relax` 必须为 `ISIF=4`，`static` 和 `phonon` 必须为静态计算。程序不会
+自动修改 INCAR，也不会生成 POTCAR。
+
+```bash
+ph qha run qha.yaml --only dpa4
+ph qha run qha.yaml --only dft --new
+ph qha resume qha.yaml
+ph qha resume qha.yaml --wait
+ph qha plot qha.yaml
+```
+
+不同晶相的 primitive cell 可能含不同数量的原子。程序先按 primitive cell 完成
+Phonopy-QHA，再统一换算成 `eV/最简化学式单元` 比较。体积范围不足的 P–T 网格
+点不会外推成稳定相，而是在图中显示灰色无数据区域。
+
+若出现显著虚频，负频模式仍按 `cutoff_frequency=0` 排除并继续分析，但终端、
+CSV、JSON 和图片都会标记 `thermodynamic_stability=false`。这类相图只能视为诊断
+结果。
+
+完整字段、VASP 模板、目录结构和结果含义见
+[QHA 配置与使用说明](docs/qha-config-reference.zh-CN.md)。
+
+## 8. 常见问题
 
 `ph validate` 提示 `.pt2` 无法加载：该冻结模型依赖 GPU、Torch/DeepMD 构建和
 CUDA。先检查 `nvidia-smi`，并确保命令使用正确的 DeepMD Python。也可换用该
@@ -234,4 +285,7 @@ OUTCAR 是否存在，然后执行 `ph resume` 或 `ph collect`。
 非奇异，并适当调整 `symmetry_tolerance`。
 
 自由能有警告：查看 `summary.json` 的最低频率、显著虚频比例和积分模式比例。
-QHA 与相图将在后续版本基于各 run 已保存的体积、组成、能量和温度网格实现。
+
+QHA 相图出现灰色区域：至少一个相在对应 P–T 点的拟合平衡体积超出采样体积
+范围，或 EOS 无效。查看每相的 `volume_points.csv` 和 `qha_grid.csv`，扩大压缩侧
+或膨胀侧体积范围后使用 `--new` 重新计算。
