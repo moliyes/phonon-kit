@@ -51,7 +51,13 @@ def scale_structure(source: Path, destination: Path, ratio: float) -> dict[str, 
     return result
 
 
-def make_phonon(structure: Path, settings: QHAPhononConfig, *, displacements: bool):
+def make_phonon(
+    structure: Path,
+    settings: QHAPhononConfig,
+    *,
+    displacements: bool,
+    primitive_matrix: str | np.ndarray = "auto",
+):
     from phonopy import Phonopy
     from phonopy.structure.cells import PrimitiveMatrixAutoDefaultWarning
 
@@ -61,7 +67,7 @@ def make_phonon(structure: Path, settings: QHAPhononConfig, *, displacements: bo
         phonon = Phonopy(
             ase_to_phonopy(atoms),
             supercell_matrix=np.diag(settings.supercell),
-            primitive_matrix="auto",
+            primitive_matrix=primitive_matrix,
             symprec=settings.symmetry_tolerance,
         )
     if displacements:
@@ -69,8 +75,47 @@ def make_phonon(structure: Path, settings: QHAPhononConfig, *, displacements: bo
     return phonon
 
 
+def canonicalize_primitive_structure(
+    source: Path,
+    destination: Path,
+    settings: QHAPhononConfig,
+) -> dict[str, Any]:
+    """Resolve a phase primitive cell once, before any volume relaxation.
+
+    Re-running ``primitive_matrix='auto'`` independently on relaxed volume
+    points is unsafe: tiny symmetry changes can make Phonopy alternate between
+    primitive and conventional cells.  QHA requires every E(V) and F(V,T)
+    value to use exactly the same extensive basis.
+    """
+    source_atoms = read_structure(source)
+    phonon = make_phonon(source, settings, displacements=False)
+    primitive_atoms = phonopy_to_ase(phonon.primitive)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    write_vasp_grouped(primitive_atoms, destination)
+    metadata = {
+        "source_structure": str(source),
+        "source_n_atoms": len(source_atoms),
+        "source_volume_angstrom3": float(source_atoms.get_volume()),
+        "primitive_n_atoms": len(primitive_atoms),
+        "primitive_volume_angstrom3": float(primitive_atoms.get_volume()),
+        "source_to_primitive_scale": len(primitive_atoms) / len(source_atoms),
+        "resolved_primitive_matrix": np.asarray(phonon.primitive_matrix, dtype=float).tolist(),
+    }
+    atomic_write_json(destination.with_suffix(destination.suffix + ".json"), metadata)
+    return metadata
+
+
 def estimate_displacements(structure: Path, settings: QHAPhononConfig) -> dict[str, Any]:
-    phonon = make_phonon(structure, settings, displacements=True)
+    from phonopy import Phonopy
+
+    reference = make_phonon(structure, settings, displacements=False)
+    phonon = Phonopy(
+        reference.primitive,
+        supercell_matrix=np.diag(settings.supercell),
+        primitive_matrix=np.eye(3, dtype=float),
+        symprec=settings.symmetry_tolerance,
+    )
+    phonon.generate_displacements(distance=settings.displacement_angstrom)
     cells = phonon.supercells_with_displacements
     if not cells:
         raise RuntimeError(f"Phonopy 没有为 {structure} 生成位移超胞")
@@ -84,7 +129,15 @@ def estimate_displacements(structure: Path, settings: QHAPhononConfig) -> dict[s
 
 
 def generate_qha_displacements(structure: Path, settings: QHAPhononConfig, outdir: Path) -> dict[str, Any]:
-    phonon = make_phonon(structure, settings, displacements=True)
+    # ``structure`` is the phase's already canonicalized primitive cell in the
+    # workflow.  Identity prevents per-volume symmetry detection from silently
+    # changing the extensive basis after relaxation.
+    phonon = make_phonon(
+        structure,
+        settings,
+        displacements=True,
+        primitive_matrix=np.eye(3, dtype=float),
+    )
     cells = phonon.supercells_with_displacements
     if not cells:
         raise RuntimeError(f"Phonopy 没有为 {structure} 生成位移超胞")

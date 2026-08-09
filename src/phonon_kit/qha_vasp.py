@@ -12,7 +12,7 @@ from .providers.vasp import _parse_force_file
 from .qha_config import QHAConfig, QHAVaspMethod
 from .qha_dispatcher import submit_qha_tasks
 from .qha_state import QHARunPaths, volume_id
-from .qha_structure import generate_qha_displacements, scale_structure
+from .qha_structure import canonicalize_primitive_structure, generate_qha_displacements, scale_structure
 from .structure import read_structure, write_vasp_grouped
 from .util import atomic_write_json, load_json
 
@@ -68,12 +68,15 @@ def target_volume(structure: Path, ratio: float) -> float:
 def prepare_relaxation_tasks(config: QHAConfig, method: QHAVaspMethod, paths: QHARunPaths) -> list[Path]:
     tasks: list[Path] = []
     for phase_name, phase in config.phases.items():
+        reference = paths.phase_work(method.name, phase_name) / "reference" / "POSCAR-primitive"
+        if not reference.is_file():
+            canonicalize_primitive_structure(phase.structure, reference, phase.phonon)
         for index, ratio in enumerate(phase.volume_ratios):
             vid = volume_id(index, ratio)
             volume_root = paths.volume_work(method.name, phase_name, vid)
             scaled = volume_root / "POSCAR-scaled"
             if not scaled.is_file():
-                scale_structure(phase.structure, scaled, ratio)
+                scale_structure(reference, scaled, ratio)
             task = volume_root / "relaxation"
             _copy_template(method.template_for(phase_name, "volume_relax"), task)
             if not (task / "vasprun.xml").is_file():
@@ -103,7 +106,8 @@ def collect_relaxation_tasks(
                 continue
             vasp_atoms = _vasp_atoms(xml)
             canonical = _restore_canonical_atoms(task / "CONTCAR", task / "atom-map.json")
-            wanted_volume = target_volume(phase.structure, ratio)
+            reference = paths.phase_work(method.name, phase_name) / "reference" / "POSCAR-primitive"
+            wanted_volume = target_volume(reference, ratio)
             actual_volume = float(canonical.get_volume())
             volume_error = abs(actual_volume - wanted_volume) / wanted_volume
             forces = np.asarray(vasp_atoms.get_forces(), dtype=float)

@@ -6,8 +6,16 @@ import numpy as np
 
 from phonon_kit.initializer import POSCAR
 from phonon_kit.qha_config import QHAPhononConfig
-from phonon_kit.qha_structure import composition_metadata, estimate_displacements, scale_structure
-from phonon_kit.structure import read_structure
+from ase import Atoms
+
+from phonon_kit.qha_structure import (
+    canonicalize_primitive_structure,
+    composition_metadata,
+    estimate_displacements,
+    generate_qha_displacements,
+    scale_structure,
+)
+from phonon_kit.structure import read_structure, write_vasp_grouped
 
 
 def test_qha_volume_scaling_and_formula_units(tmp_path: Path):
@@ -30,3 +38,27 @@ def test_qha_displacement_estimate(tmp_path: Path):
     estimate = estimate_displacements(source, QHAPhononConfig(supercell=(1, 1, 1), mesh=(4, 4, 4)))
     assert estimate["n_displacements"] > 0
     assert estimate["n_atoms_unitcell"] == 6
+
+
+def test_qha_uses_one_canonical_primitive_basis_for_all_volumes(tmp_path: Path):
+    conventional = Atoms(
+        "Si2",
+        scaled_positions=[[0, 0, 0], [0.5, 0.5, 0]],
+        cell=[[4, 0, 0], [0, 4, 0], [0, 0, 5]],
+        pbc=True,
+    )
+    source = tmp_path / "POSCAR-conventional"
+    write_vasp_grouped(conventional, source)
+    settings = QHAPhononConfig(supercell=(1, 1, 1), mesh=(4, 4, 4))
+    reference = tmp_path / "reference" / "POSCAR-primitive"
+    metadata = canonicalize_primitive_structure(source, reference, settings)
+    assert metadata["source_n_atoms"] == 2
+    assert metadata["primitive_n_atoms"] == 1
+
+    primitive_counts = []
+    for index, ratio in enumerate((0.9, 1.0, 1.1)):
+        scaled = tmp_path / f"scaled-{index}" / "POSCAR"
+        scale_structure(reference, scaled, ratio)
+        manifest = generate_qha_displacements(scaled, settings, tmp_path / f"phonon-{index}")
+        primitive_counts.append(manifest["n_atoms_primitive"])
+    assert primitive_counts == [1, 1, 1]

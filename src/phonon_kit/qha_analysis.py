@@ -181,6 +181,21 @@ def analyze_phase_qha(config: QHAConfig, method_name: str, phase_name: str, path
     summaries = [summaries[int(index)] for index in order]
     phonopys = [phonopys[int(index)] for index in order]
     resultdirs = [resultdirs[int(index)] for index in order]
+    basis_signatures = {
+        (
+            int(item["n_atoms_unitcell"]),
+            int(item["n_atoms_primitive"]),
+            float(item["formula_units_primitive"]),
+            float(item["primitive_energy_scale_from_unitcell"]),
+        )
+        for item in summaries
+    }
+    if len(basis_signatures) != 1:
+        details = sorted(basis_signatures)
+        raise RuntimeError(
+            f"{method_name}/{phase_name}: 各体积点的 primitive-cell 归一化不一致: {details}。"
+            "这通常由逐点自动识别对称性造成；请使用修正版创建新运行。"
+        )
     volumes = np.asarray([item["primitive_volume_angstrom3"] for item in summaries], dtype=float)
     energies = np.asarray([item["static_energy_ev_primitive"] for item in summaries], dtype=float)
     if len(np.unique(volumes)) < 5:

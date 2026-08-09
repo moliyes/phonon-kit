@@ -20,7 +20,7 @@ from .qha_state import (
     matching_qha_run,
     volume_id,
 )
-from .qha_structure import generate_qha_displacements, scale_structure
+from .qha_structure import canonicalize_primitive_structure, generate_qha_displacements, scale_structure
 from .qha_validation import validate_qha_runtime
 from .qha_vasp import (
     collect_phonon_tasks,
@@ -82,9 +82,12 @@ def _deepmd_volume(
         store.update_volume(method.name, phase_name, vid, status="completed", summary=summary)
         return summary
 
+    reference = paths.phase_work(method.name, phase_name) / "reference" / "POSCAR-primitive"
+    if not reference.is_file():
+        canonicalize_primitive_structure(phase.structure, reference, phase.phonon)
     scaled = volume_root / "POSCAR-scaled"
     if not scaled.is_file():
-        scaling = scale_structure(phase.structure, scaled, ratio)
+        scaling = scale_structure(reference, scaled, ratio)
     else:
         scaling = load_json(scaled.with_suffix(scaled.suffix + ".json"))
     store.update_volume(method.name, phase_name, vid, status="relaxing", target_volume_angstrom3=scaling["target_volume_angstrom3"])

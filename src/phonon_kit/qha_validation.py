@@ -76,14 +76,14 @@ def qha_plan(config: QHAConfig) -> dict[str, Any]:
     phases: dict[str, Any] = {}
     for name, phase in config.phases.items():
         estimate = estimate_displacements(phase.structure, phase.phonon)
-        reference_volume = composition["phases"][name]["volume_angstrom3"]
+        reference_volume = estimate["primitive_volume_angstrom3"]
         phases[name] = {
             "formula_unit": composition["formula_unit"],
             "reference_volume_angstrom3": reference_volume,
             "volume_ratios": list(phase.volume_ratios),
             "target_volumes_angstrom3": [reference_volume * ratio for ratio in phase.volume_ratios],
             **estimate,
-            "note": "位移数按输入结构对称性估算；固定体积弛豫后可能改变。",
+            "note": "体积和位移数基于一次性规范化后的 primitive cell；固定体积弛豫后位移数仍可能改变。",
         }
     methods: dict[str, Any] = {}
     for name, method in config.enabled_methods.items():
