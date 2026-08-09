@@ -289,3 +289,33 @@ OUTCAR 是否存在，然后执行 `ph resume` 或 `ph collect`。
 QHA 相图出现灰色区域：至少一个相在对应 P–T 点的拟合平衡体积超出采样体积
 范围，或 EOS 无效。查看每相的 `volume_points.csv` 和 `qha_grid.csv`，扩大压缩侧
 或膨胀侧体积范围后使用 `--new` 重新计算。
+
+## 9. Hermes Agent Skill
+
+项目在 `skills/materials-science/phonon-kit/` 内提供可版本化的 Hermes Skill，
+用于配置、运行和诊断普通声子与多相 QHA 工作流。推荐从项目目录直接加载，避免
+把 Skill 复制到用户目录后产生两份不同版本。
+
+在 Hermes `config.yaml` 中保留已有配置并加入：
+
+```yaml
+skills:
+  external_dirs:
+    - /path/to/phonon-kit/skills
+  config:
+    phonon_kit:
+      project_root: /path/to/phonon-kit
+```
+
+如果 `external_dirs` 或 `skills.config` 已存在，应在原列表和映射中追加，而不是
+覆盖。新机器只需把两个路径换成实际项目目录，然后新建 Hermes 会话或执行
+`/reload-skills`。可用下面的命令确认发现情况：
+
+```bash
+hermes skills list
+hermes config get skills --json
+```
+
+显式调用示例：`/phonon-kit 检查这个 QHA 运行的体积覆盖和虚频警告`。自然语言
+提及 Phonopy、DeepMD/VASP 声子、振动自由能、QHA 或 P–T 相图时也可自动触发。
+Skill 不会因状态检查而擅自执行 `run`、`resume`、DFT 提交或模型推理。

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Phonon Kit"
+  short_description: "Run and diagnose phonon and QHA workflows"
+  default_prompt: "Use $phonon-kit to configure, run, or diagnose a Phonopy, DeepMD, VASP, or multiphase QHA workflow."
