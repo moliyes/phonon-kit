@@ -1,0 +1,12 @@
+{
+  "batch_type": "Bohrium",
+  "context_type": "Bohrium",
+  "local_root": "./",
+  "remote_profile": {
+    "email": "YOUR_EMAIL",
+    "password": "YOUR_PASSWORD",
+    "program_id": 0,
+    "input_data": {"job_name": "phonon-kit-vasp"}
+  }
+}
+

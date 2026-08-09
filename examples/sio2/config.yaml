@@ -1,0 +1,40 @@
+schema_version: 1
+
+project:
+  name: sio2
+  runs_dir: runs
+
+structure:
+  file: inputs/POSCAR
+
+relaxation:
+  enabled: false
+  method: dpa4
+  variable_cell: true
+  pressure_gpa: 0.0
+  fmax_ev_angstrom: 0.01
+  max_steps: 1000
+  trajectory_interval: 10
+
+phonon:
+  supercell: [2, 2, 2]
+  displacement_angstrom: 0.01
+  primitive: auto
+  symmetry_tolerance: 1.0e-5
+  band:
+    path: auto
+    points_per_segment: 101
+  mesh: [30, 30, 30]
+  thermal:
+    temperature_min_k: 0
+    temperature_max_k: 1000
+    temperature_step_k: 10
+    imaginary_policy: exclude
+    significant_imaginary_thz: -0.1
+
+methods:
+  dpa4:
+    type: deepmd
+    model: builtin:dpa4
+    device: cuda:0
+

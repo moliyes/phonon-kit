@@ -1,0 +1,12 @@
+SYSTEM = phonopy displaced supercell
+PREC = Accurate
+IBRION = -1
+NSW = 0
+ENCUT = 520
+EDIFF = 1E-8
+ISMEAR = 0
+SIGMA = 0.01
+LREAL = .FALSE.
+LWAVE = .FALSE.
+LCHARG = .FALSE.
+

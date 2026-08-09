@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.phonon-kit/
+build/
+dist/
+*.egg-info/
+**/runs/
+**/inputs/models/*
+!**/inputs/models/.gitkeep
+**/inputs/vasp/POTCAR
+**/inputs/dispatcher/machine.json
+*.log

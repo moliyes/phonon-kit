@@ -1,0 +1,4 @@
+include README.md LICENSE THIRD_PARTY_NOTICES.md
+recursive-include models *.pt2 *.sha256 *.md
+recursive-include examples *
+

@@ -1,0 +1,8 @@
+{
+  "number_node": 1,
+  "cpu_per_node": 16,
+  "gpu_per_node": 0,
+  "group_size": 1,
+  "wait_time": 10
+}
+

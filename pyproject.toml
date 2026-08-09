@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phonon-kit"
+version = "0.1.0"
+description = "A small, resumable Phonopy workflow for DeepMD and VASP"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "phonon-kit contributors"}]
+dependencies = [
+  "ase>=3.26",
+  "dpdispatcher>=1.0,<2",
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+  "phonopy==4.4.0",
+  "PyYAML>=6",
+  "seekpath>=2.1",
+  "spglib>=2.4",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-timeout>=2"]
+
+[project.scripts]
+ph = "phonon_kit.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+phonon_kit = ["data/models/*.pt2", "data/models/*.sha256"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+markers = [
+  "gpu: requires a working NVIDIA GPU",
+  "integration: slow integration test",
+]
