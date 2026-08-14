@@ -60,7 +60,13 @@ def _parse_force_file(path: Path, n_atoms: int) -> np.ndarray:
         raise IncompleteResultsError(f"Phonopy 无法读取 VASP 力: {path}: {exc}") from exc
     if not parsed:
         raise IncompleteResultsError(f"Phonopy 未从文件读取到力: {path}")
-    forces = np.asarray(parsed[0], dtype=float)
+    # Phonopy 4.x returns a mapping containing force, point, and energy
+    # collections. Older Phonopy releases returned the force collection
+    # directly, so keep accepting both forms for portable result recovery.
+    force_sets = parsed.get("forces") if isinstance(parsed, dict) else parsed
+    if not force_sets:
+        raise IncompleteResultsError(f"Phonopy 未从文件读取到力: {path}")
+    forces = np.asarray(force_sets[0], dtype=float)
     if forces.shape != (n_atoms, 3) or not np.all(np.isfinite(forces)):
         raise IncompleteResultsError(f"VASP 力数组无效: {path}, shape={forces.shape}")
     return forces

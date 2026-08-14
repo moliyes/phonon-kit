@@ -62,8 +62,16 @@ def test_vasprun_integrity_and_phonopy_parser(tmp_path: Path, monkeypatch):
     path = tmp_path / "vasprun.xml"
     path.write_text("<modeling></modeling>", encoding="utf-8")
     expected = np.arange(9, dtype=float).reshape(3, 3)
+    monkeypatch.setattr(
+        phonopy.interface.vasp,
+        "parse_set_of_forces",
+        lambda n, files, verbose=False: {"forces": [expected]},
+    )
+    assert np.array_equal(_parse_force_file(path, 3), expected)
+
     monkeypatch.setattr(phonopy.interface.vasp, "parse_set_of_forces", lambda n, files, verbose=False: [expected])
     assert np.array_equal(_parse_force_file(path, 3), expected)
+
     path.write_text("<modeling>", encoding="utf-8")
     with pytest.raises(IncompleteResultsError, match="损坏"):
         _parse_force_file(path, 3)
