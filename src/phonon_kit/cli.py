@@ -15,6 +15,24 @@ from .util import load_json
 from .validation import validate_runtime
 
 
+def _single_run_target(target: Path) -> tuple[Path, RunPaths | None]:
+    resolved = target.expanduser().resolve()
+    root = resolved if resolved.is_dir() else resolved.parent
+    if (root / "state.json").is_file() and (root / "config.resolved.yaml").is_file():
+        return root / "config.resolved.yaml", RunPaths(root)
+    return resolved, None
+
+
+def _qha_run_target(target: Path):
+    from .qha_state import QHARunPaths
+
+    resolved = target.expanduser().resolve()
+    root = resolved if resolved.is_dir() else resolved.parent
+    if (root / "state.json").is_file() and (root / "config.resolved.yaml").is_file():
+        return root / "config.resolved.yaml", QHARunPaths(root)
+    return resolved, None
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ph", description="DeepMD/VASP finite-displacement phonon workflow")
     parser.add_argument("--version", action="version", version=f"phonon-kit {__version__}")
@@ -33,18 +51,18 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--new", action="store_true", help="保留已有现场并强制创建新版本")
     run.add_argument("--wait", action="store_true", help="等待 DFT 完成")
 
-    resume = sub.add_parser("resume", help="恢复与当前配置匹配的运行")
-    resume.add_argument("config", type=Path)
+    resume = sub.add_parser("resume", help="恢复匹配配置或指定运行目录")
+    resume.add_argument("config", type=Path, help="config.yaml、运行目录或运行内 config.resolved.yaml")
     resume.add_argument("--wait", action="store_true", help="持续等待 DFT 完成")
 
     collect = sub.add_parser("collect", help="收集已经放回本地的 VASP 结果")
-    collect.add_argument("config", type=Path)
+    collect.add_argument("config", type=Path, help="config.yaml、运行目录或运行内 config.resolved.yaml")
 
     status = sub.add_parser("status", help="显示最新运行状态")
     status.add_argument("target", type=Path, help="config.yaml 或具体运行目录")
 
     plot = sub.add_parser("plot", help="从已有结果重新生成 PNG")
-    plot.add_argument("config", type=Path)
+    plot.add_argument("config", type=Path, help="config.yaml、运行目录或运行内 config.resolved.yaml")
 
     qha = sub.add_parser("qha", help="多相准谐近似和 P-T 相图工作流")
     qha_sub = qha.add_subparsers(dest="qha_command", required=True)
@@ -61,15 +79,15 @@ def build_parser() -> argparse.ArgumentParser:
     qha_run.add_argument("--only", nargs="+", default=None)
     qha_run.add_argument("--new", action="store_true", help="保留现场并创建新版本")
     qha_run.add_argument("--wait", action="store_true", help="持续等待 DFT 各阶段完成")
-    qha_resume = qha_sub.add_parser("resume", help="恢复匹配的 QHA 运行")
-    qha_resume.add_argument("config", type=Path)
+    qha_resume = qha_sub.add_parser("resume", help="恢复匹配配置或指定 QHA 运行目录")
+    qha_resume.add_argument("config", type=Path, help="qha.yaml、运行目录或运行内 config.resolved.yaml")
     qha_resume.add_argument("--wait", action="store_true", help="持续等待 DFT 各阶段完成")
     qha_collect = qha_sub.add_parser("collect", help="收集手动放回的 QHA VASP 结果")
-    qha_collect.add_argument("config", type=Path)
+    qha_collect.add_argument("config", type=Path, help="qha.yaml、运行目录或运行内 config.resolved.yaml")
     qha_status = qha_sub.add_parser("status", help="显示 QHA 运行状态")
     qha_status.add_argument("target", type=Path, help="qha.yaml 或具体 QHA 运行目录")
     qha_plot = qha_sub.add_parser("plot", help="从现有 QHA 数值结果重新绘图")
-    qha_plot.add_argument("config", type=Path)
+    qha_plot.add_argument("config", type=Path, help="qha.yaml、运行目录或运行内 config.resolved.yaml")
     return parser
 
 
@@ -99,6 +117,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(qha_status_text(paths, load_json(paths.state_file)))
                 return 0
             config_path = args.target if args.qha_command == "status" else args.config
+            explicit_paths = None
+            if args.qha_command in {"resume", "collect", "plot"}:
+                config_path, explicit_paths = _qha_run_target(config_path)
             config = load_qha_config(config_path)
             if args.qha_command == "plan":
                 print(json.dumps(qha_plan(config), indent=2, ensure_ascii=False))
@@ -113,15 +134,15 @@ def main(argv: list[str] | None = None) -> int:
                 print(qha_status_text(paths, state))
                 return 0
             if args.qha_command == "resume":
-                paths, state = resume_qha_config(config, wait=args.wait)
+                paths, state = resume_qha_config(config, wait=args.wait, paths=explicit_paths)
                 print(qha_status_text(paths, state))
                 return 0
             if args.qha_command == "collect":
-                paths, state = collect_qha_config(config)
+                paths, state = collect_qha_config(config, paths=explicit_paths)
                 print(qha_status_text(paths, state))
                 return 0
             if args.qha_command == "plot":
-                paths, state = replot_qha_config(config)
+                paths, state = replot_qha_config(config, paths=explicit_paths)
                 print(f"QHA PNG 已重新生成: {paths.results}")
                 print(qha_status_text(paths, state))
                 return 0
@@ -145,6 +166,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         config_path = args.target if args.command == "status" else args.config
+        explicit_paths = None
+        if args.command in {"resume", "collect", "plot"}:
+            config_path, explicit_paths = _single_run_target(config_path)
         config = load_config(config_path)
         if args.command == "validate":
             report = validate_runtime(config, args.only, real_inference=True)
@@ -157,15 +181,15 @@ def main(argv: list[str] | None = None) -> int:
             print(status_text(paths, state))
             return 0
         if args.command == "resume":
-            paths, state = resume_config(config, wait=args.wait)
+            paths, state = resume_config(config, wait=args.wait, paths=explicit_paths)
             print(status_text(paths, state))
             return 0
         if args.command == "collect":
-            paths, state = collect_config(config)
+            paths, state = collect_config(config, paths=explicit_paths)
             print(status_text(paths, state))
             return 0
         if args.command == "plot":
-            paths, state = replot_config(config)
+            paths, state = replot_config(config, paths=explicit_paths)
             print(f"PNG 已重新生成: {paths.results}")
             print(status_text(paths, state))
             return 0

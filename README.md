@@ -50,6 +50,7 @@ ph status config.yaml
 
 ```text
 runs/sio2-001/
+├── inputs/                 # 本次运行的结构、模型、VASP 和调度配置快照
 ├── config.resolved.yaml
 ├── state.json
 ├── work/
@@ -122,6 +123,7 @@ methods:
 
 ```bash
 ph resume config.yaml
+ph resume runs/sio2-001     # 案例输入修改后，精确恢复指定运行
 ```
 
 只会补算缺失或损坏的位移。
@@ -176,8 +178,10 @@ POTCAR 和 runs 默认被 `.gitignore` 排除。
 ```bash
 ph run config.yaml          # DPA 算完；VASP 提交后立即返回
 ph status config.yaml
-ph resume config.yaml       # 查询一次；完成时下载并分析
-ph resume config.yaml --wait
+ph resume config.yaml       # 当前案例输入未改变时，查找匹配运行
+ph resume runs/sio2-001     # 推荐：精确恢复指定运行
+ph resume runs/sio2-001/config.resolved.yaml
+ph resume runs/sio2-001 --wait
 ```
 
 每个 VASP 位移目录都保存 `atom-map.json`。程序用 Phonopy 官方 VASP parser 从
@@ -216,7 +220,13 @@ ph resume config.yaml --wait
 - 配置相同且任务未完成：`ph run` 自动恢复。
 - 配置相同且任务已完成：返回原结果，不重复计算。
 - 已完成后修改配置：自动创建 `name-002`。
-- 未完成时修改配置：拒绝混用；使用原配置恢复，或加 `--new` 新建版本。
+- 未完成时修改配置：拒绝混用；用具体运行目录恢复，或加 `--new` 新建版本。
+
+从 0.2.1 开始，每个新运行会把实际使用的结构、模型、VASP 模板和
+DPDispatcher 配置复制到运行内 `inputs/`，`config.resolved.yaml` 只引用这份
+快照。之后修改案例级 `config.yaml` 或 `inputs/` 不会改变已有运行。恢复任务时
+优先传具体运行目录；`collect` 和 `plot` 也接受运行目录。调度快照可能包含凭据，
+请勿上传 `runs/`。
 
 状态文件采用原子写入。失败详情保存在 `state.json` 和 `logs/`，软件不会制造
 假的声子结果来掩盖失败。
@@ -258,6 +268,7 @@ ph qha run qha.yaml --only dpa4
 ph qha run qha.yaml --only dft --new
 ph qha resume qha.yaml
 ph qha resume qha.yaml --wait
+ph qha resume runs/sio2_qha-001
 ph qha plot qha.yaml
 ```
 

@@ -9,6 +9,7 @@ import yaml
 from .config import DeepMDMethod, DispatcherConfig, SUPPORTED_MODEL_SUFFIXES, builtin_model_path
 from .errors import ConfigError
 from .util import safe_name, sha256_file, sha256_json
+from .vasp_input import missing_vasp_template_inputs
 
 
 QHA_VASP_STAGES = ("volume_relax", "static", "phonon")
@@ -490,6 +491,6 @@ def validate_qha_input_paths(config: QHAConfig) -> None:
                 directory = method.template_for(phase, stage)
                 if not directory.is_dir():
                     raise ConfigError(f"VASP 模板目录不存在 ({name}/{phase}/{stage}): {directory}")
-                missing = [filename for filename in ("INCAR", "KPOINTS", "POTCAR") if not (directory / filename).is_file()]
+                missing = missing_vasp_template_inputs(directory)
                 if missing:
                     raise ConfigError(f"VASP 模板缺少 ({name}/{phase}/{stage}): {', '.join(missing)}")

@@ -48,7 +48,7 @@ def submit_qha_tasks(
         machine = Machine.load_from_json(str(method.executor.machine))
         resources = Resources.load_from_json(str(method.executor.resources))
         tasks = []
-        for task_dir in unfinished:
+        for task_dir in task_dirs:
             forward = sorted(
                 path.name
                 for path in task_dir.iterdir()

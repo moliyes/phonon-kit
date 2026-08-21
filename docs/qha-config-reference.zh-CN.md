@@ -243,6 +243,7 @@ ph qha run qha.yaml --only dpa4
 ph qha run qha.yaml --only dpa4 dft --new
 ph qha resume qha.yaml
 ph qha resume qha.yaml --wait
+ph qha resume runs/<run-id>
 ph qha collect qha.yaml
 ph qha status qha.yaml
 ph qha plot qha.yaml
@@ -250,6 +251,9 @@ ph qha plot qha.yaml
 
 配置及所有输入文件相同会恢复原 run；已完成后相同配置直接返回原结果。已完成后
 修改配置会创建下一编号，未完成时修改配置则拒绝混用，除非显式 `--new`。
+每个新运行自带各相结构、模型、三套 VASP 模板和调度 JSON 的输入快照。案例级
+输入修改后，用具体运行目录执行 `resume`、`collect` 或 `plot`，不会重新读取案例
+目录中的新输入。
 
 关键结果：
 

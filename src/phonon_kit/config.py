@@ -8,6 +8,7 @@ import yaml
 
 from .errors import ConfigError
 from .util import safe_name, sha256_file, sha256_json
+from .vasp_input import missing_vasp_template_inputs
 
 
 BUILTIN_MODEL_NAME = "dpa4_omat_neo704.pt2"
@@ -361,7 +362,7 @@ def validate_input_paths(config: Config) -> None:
         else:
             if not method.template_dir.is_dir():
                 raise ConfigError(f"VASP 模板目录不存在 ({name}): {method.template_dir}")
-            missing = [filename for filename in ("INCAR", "KPOINTS", "POTCAR") if not (method.template_dir / filename).is_file()]
+            missing = missing_vasp_template_inputs(method.template_dir)
             if missing:
                 raise ConfigError(f"VASP 模板缺少 ({name}): {', '.join(missing)}")
             for label, path in (("machine", method.executor.machine), ("resources", method.executor.resources)):

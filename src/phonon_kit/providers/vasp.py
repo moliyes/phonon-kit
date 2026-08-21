@@ -12,20 +12,7 @@ from ..dispatcher import submit_vasp
 from ..errors import IncompleteResultsError
 from ..structure import phonopy_to_ase, write_vasp_grouped
 from ..util import atomic_write_json, load_json
-
-
-def parse_incar(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        line = raw_line.split("!", 1)[0].split("#", 1)[0].strip()
-        if not line:
-            continue
-        for part in line.split(";"):
-            if "=" in part:
-                key, value = part.split("=", 1)
-                values[key.strip().upper()] = value.strip()
-    return values
-
+from ..vasp_input import parse_incar
 
 def validate_vasp_template(method: VaspMethod) -> list[str]:
     warnings: list[str] = []
@@ -106,13 +93,20 @@ class VaspProvider:
             task.mkdir(parents=True, exist_ok=True)
             for source in template_files:
                 destination = task / source.name
-                if not destination.exists() or source.stat().st_mtime_ns > destination.stat().st_mtime_ns:
+                if not destination.exists():
                     shutil.copy2(source, destination)
-            write_vasp_grouped(phonopy_to_ase(cell), task / "POSCAR", task / "atom-map.json")
-            (task / "README.txt").write_text(
-                "Static VASP force calculation for a Phonopy displaced supercell. Do not relax this structure.\n",
-                encoding="utf-8",
-            )
+            poscar = task / "POSCAR"
+            atom_map = task / "atom-map.json"
+            if not poscar.exists() and not atom_map.exists():
+                write_vasp_grouped(phonopy_to_ase(cell), poscar, atom_map)
+            elif not poscar.exists() or not atom_map.exists():
+                raise RuntimeError(f"VASP 任务输入不完整，拒绝覆盖已有文件: {task}")
+            readme = task / "README.txt"
+            if not readme.exists():
+                readme.write_text(
+                    "Static VASP force calculation for a Phonopy displaced supercell. Do not relax this structure.\n",
+                    encoding="utf-8",
+                )
         atomic_write_json(self.workdir / "manifest.json", {
             "type": "vasp",
             "template_dir": str(self.method.template_dir),

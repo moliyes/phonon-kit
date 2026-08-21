@@ -156,7 +156,7 @@ def choose_qha_run(
             return paths, state, False
         if state.get("status") != "completed":
             raise RunStateError(
-                f"最新 QHA 运行 {paths.root.name} 尚未完成但配置已改变；请恢复原配置或使用 --new"
+                f"最新 QHA 运行 {paths.root.name} 尚未完成但配置已改变；请用该运行目录 resume，或使用 --new"
             )
 
     index = entries[-1][0] + 1 if entries else 1

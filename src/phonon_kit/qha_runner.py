@@ -5,13 +5,11 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from .config import DeepMDMethod
 from .errors import IncompleteResultsError, RetryableExternalError, RunStateError
 from .providers.deepmd import DeepMDProvider
 from .qha_analysis import analyze_phase_diagram, analyze_phase_qha, analyze_qha_volume, compare_qha_methods
-from .qha_config import QHAConfig, QHAVaspMethod
+from .qha_config import QHAConfig, QHAVaspMethod, load_qha_config
 from .qha_deepmd import evaluate_qha_static, relax_qha_volume
 from .qha_state import (
     QHARunPaths,
@@ -20,6 +18,7 @@ from .qha_state import (
     matching_qha_run,
     volume_id,
 )
+from .snapshot import SNAPSHOT_CONFIG, create_qha_config_snapshot
 from .qha_structure import canonicalize_primitive_structure, generate_qha_displacements, scale_structure
 from .qha_validation import validate_qha_runtime
 from .qha_vasp import (
@@ -31,7 +30,7 @@ from .qha_vasp import (
     prepare_static_tasks,
     submit_stage,
 )
-from .util import atomic_write_json, atomic_write_text, load_json, utc_now
+from .util import atomic_write_json, load_json, utc_now
 
 
 def selected_qha_methods(config: QHAConfig, only: list[str] | None) -> list[str]:
@@ -42,13 +41,6 @@ def selected_qha_methods(config: QHAConfig, only: list[str] | None) -> list[str]
     if invalid:
         raise ValueError(f"方法未定义或未启用: {', '.join(invalid)}")
     return selected
-
-
-def _snapshot(config: QHAConfig, paths: QHARunPaths) -> None:
-    atomic_write_text(
-        paths.root / "config.resolved.yaml",
-        yaml.safe_dump(config.resolved_dict(), sort_keys=False, allow_unicode=True),
-    )
 
 
 def _record_error(store: QHAStateStore, method: str | None, exc: Exception) -> None:
@@ -327,7 +319,6 @@ def execute_qha(
     if state.get("status") == "completed":
         return state
     store.update(status="running")
-    _snapshot(config, paths)
     selected = list(state["selected_methods"])
     validation_path = paths.root / "validation.json"
     if not collect_only and (validate or not validation_path.is_file()):
@@ -370,27 +361,56 @@ def run_qha_config(
 ) -> tuple[QHARunPaths, dict[str, Any], bool]:
     selected = selected_qha_methods(config, only)
     paths, state, created = choose_qha_run(config, selected, force_new=force_new)
+    if created or not (paths.root / SNAPSHOT_CONFIG).is_file():
+        run_config = create_qha_config_snapshot(config, paths.root)
+    else:
+        run_config = load_qha_config(paths.root / SNAPSHOT_CONFIG)
     if state.get("status") == "completed" and not force_new:
         return paths, state, False
-    return paths, execute_qha(config, paths, wait=wait, validate=created), created
+    return paths, execute_qha(run_config, paths, wait=wait, validate=created), created
 
 
-def resume_qha_config(config: QHAConfig, *, wait: bool = False) -> tuple[QHARunPaths, dict[str, Any]]:
-    paths, state = matching_qha_run(config)
+def resume_qha_config(
+    config: QHAConfig,
+    *,
+    wait: bool = False,
+    paths: QHARunPaths | None = None,
+) -> tuple[QHARunPaths, dict[str, Any]]:
+    if paths is None:
+        paths, state = matching_qha_run(config)
+    else:
+        state = QHAStateStore(paths).load()
+    run_config = load_qha_config(paths.root / SNAPSHOT_CONFIG)
     if state.get("status") == "completed":
         return paths, state
-    return paths, execute_qha(config, paths, wait=wait, validate=False)
+    return paths, execute_qha(run_config, paths, wait=wait, validate=False)
 
 
-def collect_qha_config(config: QHAConfig) -> tuple[QHARunPaths, dict[str, Any]]:
-    paths, state = matching_qha_run(config)
+def collect_qha_config(
+    config: QHAConfig,
+    *,
+    paths: QHARunPaths | None = None,
+) -> tuple[QHARunPaths, dict[str, Any]]:
+    if paths is None:
+        paths, state = matching_qha_run(config)
+    else:
+        state = QHAStateStore(paths).load()
+    config = load_qha_config(paths.root / SNAPSHOT_CONFIG)
     if not any(isinstance(config.methods[name], QHAVaspMethod) for name in state["selected_methods"]):
         raise RunStateError("当前 QHA 运行未选择 VASP 方法")
     return paths, execute_qha(config, paths, validate=False, collect_only=True)
 
 
-def replot_qha_config(config: QHAConfig) -> tuple[QHARunPaths, dict[str, Any]]:
-    paths, state = matching_qha_run(config)
+def replot_qha_config(
+    config: QHAConfig,
+    *,
+    paths: QHARunPaths | None = None,
+) -> tuple[QHARunPaths, dict[str, Any]]:
+    if paths is None:
+        paths, state = matching_qha_run(config)
+    else:
+        state = QHAStateStore(paths).load()
+    config = load_qha_config(paths.root / SNAPSHOT_CONFIG)
     completed: list[str] = []
     for name in state["selected_methods"]:
         if all((paths.phase_results(name, phase) / "qha_grid.npz").is_file() for phase in config.phases):

@@ -134,7 +134,7 @@ def choose_run(config: Config, requested_methods: list[str], *, force_new: bool 
             return paths, state, False
         if state.get("status") not in TERMINAL_STATUS:
             raise RunStateError(
-                f"最新运行 {paths.root.name} 尚未完成但配置已变化；请恢复原配置，或用 --new 保留现场并新建运行"
+                f"最新运行 {paths.root.name} 尚未完成但配置已变化；请用该运行目录 resume，或用 --new 新建运行"
             )
 
     index = (entries[-1][0] + 1) if entries else 1
@@ -158,4 +158,3 @@ def choose_run(config: Config, requested_methods: list[str], *, force_new: bool 
     }
     StateStore(paths).save(state)
     return paths, state, True
-

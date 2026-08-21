@@ -10,6 +10,7 @@ from phonon_kit.errors import IncompleteResultsError
 from phonon_kit.providers.vasp import VaspProvider, _parse_force_file, parse_incar, validate_vasp_template
 from phonon_kit.structure import generate_displacements
 from phonon_kit.util import load_json
+from phonon_kit.vasp_input import has_vasp_kpoint_source, missing_vasp_template_inputs
 
 
 def method(tmp_path: Path) -> VaspMethod:
@@ -26,6 +27,27 @@ def test_static_incar_validation(tmp_path: Path):
     item = method(tmp_path)
     assert validate_vasp_template(item) == []
     assert parse_incar(item.template_dir / "INCAR")["IBRION"] == "-1"
+
+
+def test_kspacing_can_replace_kpoints(tmp_path: Path):
+    item = method(tmp_path)
+    (item.template_dir / "KPOINTS").unlink()
+    with (item.template_dir / "INCAR").open("a", encoding="utf-8") as handle:
+        handle.write("KSPACING = 0.20\n")
+    assert has_vasp_kpoint_source(item.template_dir)
+    assert missing_vasp_template_inputs(item.template_dir) == []
+
+
+@pytest.mark.parametrize("value", ["0", "-0.2", "not-a-number"])
+def test_invalid_kspacing_does_not_replace_kpoints(tmp_path: Path, value: str):
+    item = method(tmp_path)
+    (item.template_dir / "KPOINTS").unlink()
+    with (item.template_dir / "INCAR").open("a", encoding="utf-8") as handle:
+        handle.write(f"KSPACING = {value}\n")
+    assert not has_vasp_kpoint_source(item.template_dir)
+    assert missing_vasp_template_inputs(item.template_dir) == [
+        "KPOINTS（或 INCAR 中的正数 KSPACING）"
+    ]
 
 
 def test_relaxing_incar_is_rejected(tmp_path: Path):
@@ -54,6 +76,11 @@ def test_prepare_vasp_jobs_with_atom_maps(config_path: Path, tmp_path: Path):
     assert all((job / "POTCAR").is_file() for job in jobs)
     mapping = load_json(jobs[0] / "atom-map.json")
     assert sorted(mapping["written_to_canonical"]) == list(range(manifest["n_atoms_supercell"]))
+
+    original = (jobs[0] / "INCAR").read_text(encoding="utf-8")
+    (item.template_dir / "INCAR").write_text("IBRION=-1\nNSW=0\nEDIFF=1E-4\n", encoding="utf-8")
+    provider.prepare()
+    assert (jobs[0] / "INCAR").read_text(encoding="utf-8") == original
 
 
 def test_vasprun_integrity_and_phonopy_parser(tmp_path: Path, monkeypatch):

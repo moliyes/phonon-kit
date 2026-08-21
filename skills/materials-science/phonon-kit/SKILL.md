@@ -79,18 +79,18 @@ Use Hermes tools as the interaction surface:
 | Create one-structure case | `terminal(command="ph init <case-dir>")` |
 | Validate one-structure case | `terminal(command="ph validate <config.yaml> [--only ...]")` |
 | Run one-structure case | `terminal(command="ph run <config.yaml> [--only ...] [--new] [--wait]", background=true, notify_on_complete=true)` |
-| Resume one-structure case | `terminal(command="ph resume <config.yaml> [--wait]", background=true, notify_on_complete=true)` |
-| Collect local VASP results | `terminal(command="ph collect <config.yaml>")` |
+| Resume one-structure case | `terminal(command="ph resume <run-dir> [--wait]", background=true, notify_on_complete=true)` |
+| Collect local VASP results | `terminal(command="ph collect <run-dir>")` |
 | Inspect one-structure status | `terminal(command="ph status <config-or-run-dir>")` |
-| Replot one-structure results | `terminal(command="ph plot <config.yaml>")` |
+| Replot one-structure results | `terminal(command="ph plot <run-dir>")` |
 | Create QHA case | `terminal(command="ph qha init <case-dir> --phases <phase...>")` |
 | Estimate QHA work | `terminal(command="ph qha plan <qha.yaml>")` |
 | Validate QHA case | `terminal(command="ph qha validate <qha.yaml> [--only ...]")` |
 | Run QHA | `terminal(command="ph qha run <qha.yaml> [--only ...] [--new] [--wait]", background=true, notify_on_complete=true)` |
-| Resume QHA | `terminal(command="ph qha resume <qha.yaml> [--wait]", background=true, notify_on_complete=true)` |
-| Collect QHA VASP results | `terminal(command="ph qha collect <qha.yaml>")` |
+| Resume QHA | `terminal(command="ph qha resume <run-dir> [--wait]", background=true, notify_on_complete=true)` |
+| Collect QHA VASP results | `terminal(command="ph qha collect <run-dir>")` |
 | Inspect QHA status | `terminal(command="ph qha status <config-or-run-dir>")` |
-| Replot QHA results | `terminal(command="ph qha plot <qha.yaml>")` |
+| Replot QHA results | `terminal(command="ph qha plot <run-dir>")` |
 
 Both status commands accept a configuration file or a concrete run directory.
 Quote every path that may contain spaces.
@@ -121,8 +121,9 @@ Load references only when needed:
    expected run prefix, model/device, and whether VASP submission is in scope.
 4. **Inspect before changing.** Run the correct status command and inspect the
    latest `state.json` plus `config.resolved.yaml` when a run exists. Do not alter
-   old results. A changed incomplete run requires the original inputs or an
-   explicitly requested `--new` run.
+   old results. New runs contain their own input snapshots; resume a specific run
+   by its directory. A changed incomplete case requires an explicitly requested
+   `--new` run for independent computation.
 5. **Configure scientifically.** For a single structure, establish relaxation,
    supercell, displacement, mesh, temperature range, and force providers. For
    QHA, additionally establish real phase structures, common reduced formula,
@@ -137,7 +138,8 @@ Load references only when needed:
    Validation includes real DeepMD energy, force, and stress inference.
 8. **Start once.** When explicitly requested, launch the selected run/resume
    command in the background. Preserve the exact `--only` method set across
-   recovery. Use `--new` only for an explicitly requested independent rerun.
+   recovery. Prefer the concrete run directory for resume, collect, and plot.
+   Use `--new` only for an explicitly requested independent rerun.
 9. **Diagnose from summaries first.** Use CLI status, resolved configuration, and
    result `summary.json` files before reading large logs or arrays. For VASP,
    distinguish submitted/waiting/retryable transfer state from a failed physical

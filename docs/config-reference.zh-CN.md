@@ -268,7 +268,7 @@ methods:
     head: null
 ```
 
-同一套位移比较 DPA 与 VASP：启用一个或多个 DeepMD 方法，再加入上文的 `dft` 方法。`ph run` 会先完成 DPA；DFT 异步提交后可用 `ph resume config.yaml` 查询，或用 `ph resume config.yaml --wait` 等待并自动分析。
+同一套位移比较 DPA 与 VASP：启用一个或多个 DeepMD 方法，再加入上文的 `dft` 方法。`ph run` 会先完成 DPA；DFT 异步提交后可用 `ph resume config.yaml` 查询。任务创建后会把结构、模型、VASP 模板和调度 JSON 复制到运行目录，因此案例输入修改后应使用 `ph resume runs/<run-id>` 精确恢复。`resume`、`collect` 和 `plot` 都接受运行目录或其中的 `config.resolved.yaml`。
 
 ## 配置检查
 

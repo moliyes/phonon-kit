@@ -21,7 +21,7 @@ def _copy_template(directory: Path, task: Path) -> None:
     task.mkdir(parents=True, exist_ok=True)
     for source in sorted(path for path in directory.iterdir() if path.is_file()):
         destination = task / source.name
-        if not destination.exists() or source.stat().st_mtime_ns > destination.stat().st_mtime_ns:
+        if not destination.exists():
             shutil.copy2(source, destination)
 
 
@@ -79,8 +79,12 @@ def prepare_relaxation_tasks(config: QHAConfig, method: QHAVaspMethod, paths: QH
                 scale_structure(reference, scaled, ratio)
             task = volume_root / "relaxation"
             _copy_template(method.template_for(phase_name, "volume_relax"), task)
-            if not (task / "vasprun.xml").is_file():
-                write_vasp_grouped(read_structure(scaled), task / "POSCAR", task / "atom-map.json")
+            poscar = task / "POSCAR"
+            atom_map = task / "atom-map.json"
+            if not poscar.exists() and not atom_map.exists():
+                write_vasp_grouped(read_structure(scaled), poscar, atom_map)
+            elif not poscar.exists() or not atom_map.exists():
+                raise RuntimeError(f"VASP 任务输入不完整，拒绝覆盖已有文件: {task}")
             atomic_write_json(
                 task / "task.json",
                 {"stage": "volume_relax", "phase": phase_name, "volume_id": vid, "ratio": ratio},
@@ -156,8 +160,12 @@ def prepare_static_tasks(config: QHAConfig, method: QHAVaspMethod, paths: QHARun
                 raise IncompleteResultsError(f"缺少弛豫结构，不能准备静态任务: {relaxed}")
             task = volume_root / "static"
             _copy_template(method.template_for(phase_name, "static"), task)
-            if not (task / "vasprun.xml").is_file():
-                write_vasp_grouped(read_structure(relaxed), task / "POSCAR", task / "atom-map.json")
+            poscar = task / "POSCAR"
+            atom_map = task / "atom-map.json"
+            if not poscar.exists() and not atom_map.exists():
+                write_vasp_grouped(read_structure(relaxed), poscar, atom_map)
+            elif not poscar.exists() or not atom_map.exists():
+                raise RuntimeError(f"VASP 任务输入不完整，拒绝覆盖已有文件: {task}")
             atomic_write_json(
                 task / "task.json",
                 {"stage": "static", "phase": phase_name, "volume_id": vid, "ratio": ratio},
@@ -181,9 +189,12 @@ def prepare_phonon_tasks(config: QHAConfig, method: QHAVaspMethod, paths: QHARun
             for disp_index in range(1, int(manifest["n_displacements"]) + 1):
                 task = phonon_root / "jobs" / f"disp-{disp_index:04d}"
                 _copy_template(method.template_for(phase_name, "phonon"), task)
-                if not (task / "vasprun.xml").is_file():
-                    shutil.copy2(phonon_root / f"POSCAR-{disp_index:04d}", task / "POSCAR")
-                    shutil.copy2(phonon_root / f"atom-map-{disp_index:04d}.json", task / "atom-map.json")
+                poscar = task / "POSCAR"
+                atom_map = task / "atom-map.json"
+                if not poscar.exists():
+                    shutil.copy2(phonon_root / f"POSCAR-{disp_index:04d}", poscar)
+                if not atom_map.exists():
+                    shutil.copy2(phonon_root / f"atom-map-{disp_index:04d}.json", atom_map)
                 atomic_write_json(
                     task / "task.json",
                     {"stage": "phonon", "phase": phase_name, "volume_id": vid, "displacement": disp_index},

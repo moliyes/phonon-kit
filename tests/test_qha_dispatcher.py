@@ -32,6 +32,9 @@ def test_qha_dispatcher_async_resume_uses_stable_hash(tmp_path: Path, monkeypatc
     task_dir = method_work / "phases" / "alpha" / "volumes" / "v000" / "static"
     task_dir.mkdir(parents=True)
     (task_dir / "POSCAR").write_text("input")
+    task_dir_2 = method_work / "phases" / "alpha" / "volumes" / "v001" / "static"
+    task_dir_2.mkdir(parents=True)
+    (task_dir_2 / "POSCAR").write_text("input")
     hashes: list[str] = []
 
     class FakeMachine:
@@ -75,8 +78,9 @@ def test_qha_dispatcher_async_resume_uses_stable_hash(tmp_path: Path, monkeypatc
         Task=FakeTask,
     )
     monkeypatch.setitem(sys.modules, "dpdispatcher", fake)
-    submitted = submit_qha_tasks(method, method_work, "static", [task_dir], wait=False)
+    submitted = submit_qha_tasks(method, method_work, "static", [task_dir, task_dir_2], wait=False)
     assert submitted["status"] == "submitted"
-    ready = submit_qha_tasks(method, method_work, "static", [task_dir], wait=True)
+    (task_dir / "vasprun.xml").write_text("<modeling/>")
+    ready = submit_qha_tasks(method, method_work, "static", [task_dir, task_dir_2], wait=True)
     assert ready["status"] == "ready"
     assert hashes == ["stable-submission-hash", "stable-submission-hash"]

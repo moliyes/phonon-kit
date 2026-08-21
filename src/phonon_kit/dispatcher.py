@@ -42,8 +42,6 @@ def submit_vasp(method: VaspMethod, method_workdir: Path, *, wait: bool) -> dict
         resources = Resources.load_from_json(str(method.executor.resources))
         tasks = []
         for task_dir in task_dirs:
-            if (task_dir / "vasprun.xml").is_file():
-                continue
             forward = sorted(
                 path.name
                 for path in task_dir.iterdir()
@@ -89,4 +87,3 @@ def submit_vasp(method: VaspMethod, method_workdir: Path, *, wait: bool) -> dict
         return result
     except Exception as exc:
         raise ExternalProgramError(f"DPDispatcher 提交/恢复失败 ({method.name}): {exc}") from exc
-

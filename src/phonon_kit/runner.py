@@ -5,17 +5,16 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from .analysis import analyze_method
 from .compare import compare_methods
-from .config import Config, DeepMDMethod, VaspMethod
+from .config import Config, DeepMDMethod, VaspMethod, load_config
 from .errors import IncompleteResultsError, RunStateError
 from .providers.deepmd import DeepMDProvider, relax_structure
 from .providers.vasp import VaspProvider
 from .state import RunPaths, StateStore, choose_run, matching_run
+from .snapshot import SNAPSHOT_CONFIG, create_config_snapshot
 from .structure import generate_displacements, normalize_structure
-from .util import atomic_write_text, load_json, utc_now
+from .util import load_json, utc_now
 from .validation import validate_runtime
 
 
@@ -27,11 +26,6 @@ def selected_method_names(config: Config, only: list[str] | None) -> list[str]:
     if invalid:
         raise ValueError(f"方法未定义或未启用: {', '.join(invalid)}")
     return selected
-
-
-def _snapshot_config(config: Config, paths: RunPaths) -> None:
-    text = yaml.safe_dump(config.resolved_dict(), sort_keys=False, allow_unicode=True)
-    atomic_write_text(paths.root / "config.resolved.yaml", text)
 
 
 def _record_error(store: StateStore, method: str | None, exc: Exception) -> None:
@@ -136,7 +130,6 @@ def execute_run(config: Config, paths: RunPaths, *, wait: bool = False, validate
     if state.get("status") == "completed":
         return state
     store.update(status="running")
-    _snapshot_config(config, paths)
     try:
         if validate:
             report = validate_runtime(config, selected, real_inference=True, logdir=paths.logs)
@@ -197,21 +190,35 @@ def execute_run(config: Config, paths: RunPaths, *, wait: bool = False, validate
 def run_config(config: Config, *, only: list[str] | None = None, force_new: bool = False, wait: bool = False) -> tuple[RunPaths, dict[str, Any], bool]:
     selected = selected_method_names(config, only)
     paths, state, created = choose_run(config, selected, force_new=force_new)
+    snapshot_path = paths.root / SNAPSHOT_CONFIG
+    run_config = (
+        create_config_snapshot(config, paths.root)
+        if created or not snapshot_path.is_file()
+        else load_config(snapshot_path)
+    )
     if state.get("status") == "completed" and not force_new:
         return paths, state, False
-    final = execute_run(config, paths, wait=wait, validate=created)
+    final = execute_run(run_config, paths, wait=wait, validate=created)
     return paths, final, created
 
 
-def resume_config(config: Config, *, wait: bool = False) -> tuple[RunPaths, dict[str, Any]]:
-    paths, state = matching_run(config)
+def resume_config(config: Config, *, wait: bool = False, paths: RunPaths | None = None) -> tuple[RunPaths, dict[str, Any]]:
+    if paths is None:
+        paths, state = matching_run(config)
+    else:
+        state = StateStore(paths).load()
+    run_config = load_config(paths.root / SNAPSHOT_CONFIG)
     if state.get("status") == "completed":
         return paths, state
-    return paths, execute_run(config, paths, wait=wait, validate=False)
+    return paths, execute_run(run_config, paths, wait=wait, validate=False)
 
 
-def collect_config(config: Config) -> tuple[RunPaths, dict[str, Any]]:
-    paths, state = matching_run(config)
+def collect_config(config: Config, *, paths: RunPaths | None = None) -> tuple[RunPaths, dict[str, Any]]:
+    if paths is None:
+        paths, state = matching_run(config)
+    else:
+        state = StateStore(paths).load()
+    config = load_config(paths.root / SNAPSHOT_CONFIG)
     store = StateStore(paths)
     selected = list(state["selected_methods"])
     yaml_path = paths.displacements / "phonopy_disp.yaml"
@@ -223,7 +230,6 @@ def collect_config(config: Config) -> tuple[RunPaths, dict[str, Any]]:
             continue
         found = True
         provider = _provider(config, paths, name, yaml_path)
-        provider.prepare()
         try:
             forces, energies = provider.collect()
             store.update_method(name, status="analyzing", n_displacements=len(forces), energies_available=energies is not None)
@@ -241,8 +247,12 @@ def collect_config(config: Config) -> tuple[RunPaths, dict[str, Any]]:
     return paths, _finalize_status(store, selected)
 
 
-def replot_config(config: Config) -> tuple[RunPaths, dict[str, Any]]:
-    paths, state = matching_run(config)
+def replot_config(config: Config, *, paths: RunPaths | None = None) -> tuple[RunPaths, dict[str, Any]]:
+    if paths is None:
+        paths, state = matching_run(config)
+    else:
+        state = StateStore(paths).load()
+    config = load_config(paths.root / SNAPSHOT_CONFIG)
     selected = list(state["selected_methods"])
     yaml_path = paths.displacements / "phonopy_disp.yaml"
     for name in selected:

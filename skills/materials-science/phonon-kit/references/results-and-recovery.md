@@ -20,6 +20,7 @@ Both workflows use numbered directories and atomically written state:
 
 ```text
 runs/<project>-001/
+├── inputs/                 # immutable structures, models, VASP and dispatcher inputs
 ├── config.resolved.yaml
 ├── state.json
 ├── validation.json
@@ -68,6 +69,22 @@ Identity rules:
   explicitly requests an independent `--new` run.
 - A different `--only` set is rejected for an existing matching run; preserve the
   method list or explicitly create a new run.
+
+Runs created by phonon-kit 0.2.1 or later are self-contained.
+`config.resolved.yaml` points only to the run's `inputs/` snapshot. Later edits
+to case-level structures, models, VASP templates, or dispatcher JSON do not
+affect that run. Prefer exact run targeting for recovery:
+
+```text
+ph resume runs/project-001
+ph collect runs/project-001
+ph plot runs/project-001
+ph qha resume runs/project-001
+```
+
+Use case YAML with `resume` only when its current inputs still identify the
+wanted run. Dispatcher snapshots may contain credentials; never print or
+publish them.
 
 Config fingerprints include resolved settings and relevant input content. Never
 edit `state.json`, `config.resolved.yaml`, or delete outputs to force a match.
@@ -196,10 +213,10 @@ same project name but a different runs directory.
 
 ### Configuration changed
 
-Compare the editable YAML and the run's resolved snapshot. If the run is
-incomplete, restore the exact original inputs to resume or, only when requested,
-start a separate `--new` run. If the old run completed, ordinary `run` with the
-changed config creates a new numbered run automatically.
+Compare the editable YAML and the run's resolved snapshot. Resume the existing
+task by its concrete run directory; do not restore or rewrite case-level inputs.
+Start a separate run with `--new` only when requested. If the old run completed,
+ordinary `run` with changed inputs creates a new numbered run automatically.
 
 ### DeepMD interruption
 
