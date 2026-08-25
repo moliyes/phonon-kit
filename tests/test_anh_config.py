@@ -8,7 +8,7 @@ from phonon_kit.anh_config import load_anh_config
 from phonon_kit.anh_initializer import init_anh_case
 from phonon_kit.anh_snapshot import create_anh_snapshot
 from phonon_kit.anh_state import AnhRunPaths, choose_anh_run
-from phonon_kit.anh_structure import displacement_plan
+from phonon_kit.anh_structure import build_phono3py, displacement_plan
 from phonon_kit.errors import ConfigError
 
 
@@ -100,3 +100,6 @@ def test_anh_snapshot_is_self_contained_with_born(tmp_path: Path) -> None:
     paths2 = AnhRunPaths(paths.root)
     assert paths2.state_file.is_file()
     assert displacement_plan(snap)["nac_enabled"] is True
+    ph3 = build_phono3py(snap, snap.structure.file)
+    assert ph3.nac_params is not None
+    assert ph3.nac_params["factor"] == pytest.approx(14.39965172592227)

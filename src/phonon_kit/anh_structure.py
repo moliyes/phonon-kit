@@ -11,6 +11,26 @@ from .structure import ase_to_phonopy, phonopy_to_ase, read_structure, write_vas
 from .util import atomic_write_json
 
 
+def _parse_born_with_vasp_units(primitive, filename: Path, symprec: float) -> dict[str, Any]:
+    """Parse a Phonopy BORN file and restore the VASP NAC unit factor.
+
+    Phonopy 4.4 ``parse_BORN`` returns Born charges and the dielectric tensor,
+    but no longer includes the ``factor`` required by Phono3py's dynamical
+    matrix.  BORN files used by phonon-kit follow the VASP convention.
+    """
+    from phonopy.file_IO import parse_BORN
+    from phonopy.interface.calculator import get_calculator_physical_units
+
+    nac_params = parse_BORN(
+        primitive,
+        symprec=symprec,
+        filename=str(filename),
+        lang="Rust",
+    )
+    nac_params.setdefault("factor", get_calculator_physical_units("vasp").nac_factor)
+    return nac_params
+
+
 def build_phono3py(config: AnhConfig, structure: Path):
     from phono3py import Phono3py
     from phonopy.structure.cells import PrimitiveMatrixAutoDefaultWarning
@@ -29,13 +49,10 @@ def build_phono3py(config: AnhConfig, structure: Path):
         warnings.simplefilter("ignore", PrimitiveMatrixAutoDefaultWarning)
         ph3 = Phono3py(**kwargs)
     if config.structure.born_file is not None:
-        from phonopy.file_IO import parse_BORN
-
-        ph3.nac_params = parse_BORN(
+        ph3.nac_params = _parse_born_with_vasp_units(
             ph3.primitive,
-            symprec=config.anharmonic.symmetry_tolerance,
-            filename=str(config.structure.born_file),
-            lang="Rust",
+            config.structure.born_file,
+            config.anharmonic.symmetry_tolerance,
         )
     return ph3
 
@@ -113,12 +130,9 @@ def load_anh_displacements(config: AnhConfig, yaml_path: Path, *, produce_fc: bo
     kwargs: dict[str, Any] = {"phono3py_yaml": str(yaml_path), "produce_fc": produce_fc, "is_nac": False}
     ph3 = load(**kwargs)
     if config.structure.born_file is not None:
-        from phonopy.file_IO import parse_BORN
-
-        ph3.nac_params = parse_BORN(
+        ph3.nac_params = _parse_born_with_vasp_units(
             ph3.primitive,
-            symprec=config.anharmonic.symmetry_tolerance,
-            filename=str(config.structure.born_file),
-            lang="Rust",
+            config.structure.born_file,
+            config.anharmonic.symmetry_tolerance,
         )
     return ph3
