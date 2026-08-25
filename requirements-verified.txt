@@ -2,9 +2,11 @@
 # DeepMD and Torch remain external because reinstalling them can break GPU models.
 ase==3.29.0
 dpdispatcher==1.0.3
+h5py==3.16.0
 matplotlib==3.11.0
 numpy==2.4.6
 phonopy==4.4.0
+phono3py==4.4.0
 PyYAML==6.0.3
 seekpath==2.2.1
 spglib==2.7.0
@@ -12,4 +14,3 @@ spglib==2.7.0
 # External runtime observed during verification:
 # deepmd-kit 3.2.0b1.dev102+g3d73c6753
 # torch 2.12.1+cu126
-

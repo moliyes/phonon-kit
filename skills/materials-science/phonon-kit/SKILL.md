@@ -1,13 +1,13 @@
 ---
 name: phonon-kit
-description: Run Phonopy phonons and DeepMD/VASP QHA phase diagrams.
-version: 0.1.0
+description: Phonopy/Phono3py DeepMD/VASP phonons, QHA, phase maps.
+version: 0.2.0
 author: moliyes, Hermes Agent
 license: MIT
 platforms: [linux]
 metadata:
   hermes:
-    tags: [materials-science, phonons, Phonopy, DeepMD, VASP, QHA, phase-diagram]
+    tags: [materials-science, phonons, Phonopy, Phono3py, DeepMD, VASP, QHA, phase-diagram, thermal-conductivity]
     category: materials-science
     related_skills: [calypso-dp-search]
     requires_tools: [terminal]
@@ -21,7 +21,8 @@ metadata:
 # Phonon Kit Skill
 
 Operate the `ph` CLI for resumable finite-displacement phonons, vibrational
-thermodynamics, DeepMD/VASP comparison, multiphase QHA, and P-T phase diagrams.
+thermodynamics, Phono3py third-order RTA transport, DeepMD/VASP comparison,
+multiphase QHA, and P-T phase diagrams.
 Separate workflow completion from scientific validity: a completed calculation
 with significant imaginary modes or inadequate volume coverage remains diagnostic.
 
@@ -29,13 +30,15 @@ with significant imaginary modes or inadequate volume coverage remains diagnosti
 
 - Create or change a single-structure Phonopy calculation using DeepMD/DPA or VASP.
 - Create or change a multiphase QHA and P-T phase-diagram calculation.
+- Plan, run, plot, or diagnose DeepMD + Phono3py fc2/fc3, three-phonon
+  scattering, linewidth, lifetime, or RTA thermal conductivity.
 - Validate models, structures, supercells, VASP templates, CUDA, or DPDispatcher.
 - Inspect status, failures, checkpoints, VASP collection, plots, phonon spectra,
   thermal properties, QHA volume points, Gibbs grids, or phase boundaries.
 - Explain imaginary modes, convergence, model agreement, QHA validity, or handoff
   from a CALYPSO structure search.
 - Do not use for VASP-DFPT, force-field training, variable-composition convex
-  hulls, explicit anharmonicity, melting, or chemical-potential phase diagrams.
+  hulls, fourth-order phonons, melting, or chemical-potential phase diagrams.
 
 ## Prerequisites
 
@@ -48,7 +51,8 @@ with significant imaginary modes or inadequate volume coverage remains diagnosti
    with DeepMD when a DeepMD method is requested.
 3. If `ph` is absent, read `install.sh` and the project README. Install or repair
    it only after the user explicitly asks.
-4. Require a compatible NVIDIA runtime for `builtin:dpa4`; the bundled frozen
+4. Require Phono3py 4.4 for `ph anh`. Require a compatible NVIDIA runtime for
+   `builtin:dpa4`; the bundled frozen
    `.pt2` model is GPU-only. VASP workflows additionally require valid templates,
    POTCAR, DPDispatcher configuration, credentials, and a working remote executor.
 
@@ -61,12 +65,13 @@ Use Hermes tools as the interaction surface:
 - Change YAML with `patch`, preserving comments and unrelated fields. Never edit
   a run's `config.resolved.yaml` or `state.json` to alter workflow identity.
 - Use `terminal(command="...", workdir="...")` for CLI checks.
-- Treat `ph status`, `ph qha status`, and `ph qha plan` as read-only diagnostics.
+- Treat `ph status`, `ph qha status`, `ph qha plan`, `ph anh status`, and
+  `ph anh plan` as read-only diagnostics.
 - Run `init`, modify configuration, perform real-inference `validate`, invoke
   `run` or `resume`, collect VASP results, or regenerate plots only when the user
   explicitly requests that action. A request to diagnose is not authority to
   submit, resume, collect, replot, or infer with a model.
-- Start DPA runs, QHA runs, and any command using `--wait` with
+- Start DPA runs, QHA runs, anharmonic runs, and any command using `--wait` with
   `background=true, notify_on_complete=true`. Track it with `process`; do not
   launch another process for the same run while one may still be active.
 - Remember that `resume` can continue local DPA calculations or submit the next
@@ -91,6 +96,11 @@ Use Hermes tools as the interaction surface:
 | Collect QHA VASP results | `terminal(command="ph qha collect <run-dir>")` |
 | Inspect QHA status | `terminal(command="ph qha status <config-or-run-dir>")` |
 | Replot QHA results | `terminal(command="ph qha plot <run-dir>")` |
+| Create anharmonic case | `terminal(command="ph anh init <case-dir>")` |
+| Estimate fc2/fc3 work | `terminal(command="ph anh plan <anh.yaml>")` |
+| Run or resume anharmonic case | `terminal(command="ph anh run <anh.yaml-or-run-dir> [--new]", background=true, notify_on_complete=true)` |
+| Inspect anharmonic status | `terminal(command="ph anh status <config-or-run-dir>")` |
+| Replot anharmonic results | `terminal(command="ph anh plot <run-dir>")` |
 
 Both status commands accept a configuration file or a concrete run directory.
 Quote every path that may contain spaces.
@@ -101,6 +111,9 @@ Load references only when needed:
   `skill_view("phonon-kit", "references/configuration.md")`.
 - For QHA configuration, work estimates, VASP stages, or phase-map construction,
   load `skill_view("phonon-kit", "references/qha-workflow.md")`.
+- For fc2/fc3 settings, task estimates, RTA, gamma, lifetime, NAC, or third-order
+  convergence, load
+  `skill_view("phonon-kit", "references/anharmonic-workflow.md")`.
 - For status, errors, checkpoints, DFT transfer, recovery, collection, or replot,
   load `skill_view("phonon-kit", "references/results-and-recovery.md")`.
 - For imaginary modes, thermodynamics, convergence, phase-boundary claims,
@@ -109,10 +122,10 @@ Load references only when needed:
 
 ## Procedure
 
-1. **Classify the workflow.** Use ordinary `ph` commands for one structure's
-   harmonic phonons; use `ph qha` only for two or more same-composition phases
-   over multiple volumes. Never pass `config.yaml` to QHA or `qha.yaml` to the
-   ordinary workflow.
+1. **Classify the workflow.** Use ordinary `ph` for one structure's harmonic
+   phonons, `ph anh` for DeepMD third-order scattering and RTA conductivity, and
+   `ph qha` for same-composition phases over multiple volumes. Keep
+   `config.yaml`, `anh.yaml`, and `qha.yaml` in their matching workflows.
 2. **Classify the request.** Separate read-only diagnosis, scientific advice,
    initialization, configuration change, validation, run, resume, collection,
    and replotting. Obtain explicit authority for every mutating or costly action.
@@ -129,9 +142,11 @@ Load references only when needed:
    QHA, additionally establish real phase structures, common reduced formula,
    volume coverage, per-phase supercells, EOS, and P-T grid. Do not silently
    invent a scientific parameter whose choice controls the conclusion.
-6. **Estimate before QHA.** Run `ph qha plan` and report phases, volume points,
+6. **Estimate expensive work.** Run `ph qha plan` and report phases, volume points,
    expected displaced supercells, local model evaluations, and VASP task counts.
    Warn that fixed-volume relaxation can change symmetry and the final count.
+   Before third-order work, run `ph anh plan`; report fc3/fc2 displacements,
+   supercell atoms, model count, total force evaluations, and q mesh.
 7. **Validate with authority.** After initialization or changes to structures,
    models, device, templates, POTCAR, or dispatcher files, run the corresponding
    validate command if the user asked to validate or proceed with computation.
@@ -140,6 +155,8 @@ Load references only when needed:
    command in the background. Preserve the exact `--only` method set across
    recovery. Prefer the concrete run directory for resume, collect, and plot.
    Use `--new` only for an explicitly requested independent rerun.
+   `ph anh run <run-dir>` is the anharmonic resume mechanism; it has no separate
+   resume command.
 9. **Diagnose from summaries first.** Use CLI status, resolved configuration, and
    result `summary.json` files before reading large logs or arrays. For VASP,
    distinguish submitted/waiting/retryable transfer state from a failed physical
@@ -156,6 +173,8 @@ Load references only when needed:
     method completed and check forces, force constants, band, DOS, thermal data,
     plots, and comparison when applicable. For QHA, require all selected phases
     and volumes completed, then check per-phase QHA grids and the phase diagram.
+    For anharmonic methods, require fc2/fc3, official parameter and kappa HDF5,
+    conductivity and lifetime CSV, plots, and summary.
 11. **Report scientific qualifiers.** Always report minimum frequencies or
     imaginary-mode warnings, volume coverage and invalid/edge points for QHA,
     normalization basis, method/model, and convergence checks still outstanding.
@@ -192,6 +211,18 @@ Load references only when needed:
   dynamically stable. Frequency magnitude alone cannot identify a genuine
   instability, numerical artifact, or model failure; report plausible causes and
   required checks rather than assigning one cause as fact.
+- `ph anh` does not relax structures. It uses raw displaced-supercell forces by
+  default, matching the harmonic workflow. Residual-force subtraction is an
+  explicit option and changes the force-constant convention.
+- Phono3py `gamma` is half linewidth in ordinary-frequency THz. Use
+  `linewidth=2*gamma` and `lifetime_ps=1/(4*pi*gamma)`; report non-positive gamma
+  as a missing lifetime, not zero.
+- Significant imaginary modes make anharmonic kappa diagnostic even when
+  `continue_on_imaginary=true`. Intrinsic three-phonon RTA excludes isotope,
+  boundary, electron, and four-phonon scattering. Converge fc2/fc3 supercells,
+  displacement amplitude, and q mesh before interpreting absolute conductivity.
+- Polar structures may need a compatible BORN file for NAC. Compared models
+  must share structure, primitive mapping, NAC data, displacements, and mesh.
 - A QHA phase map is invalid wherever any candidate phase lacks a valid Gibbs
   minimum. Near-edge points are warnings, and extrapolated minima are no-data,
   not stable-phase predictions. `near_volume_edge` means an in-range minimum close
@@ -212,6 +243,10 @@ Load references only when needed:
 - For completed QHA methods, confirm every expected volume is complete; every
   phase has `volume_points.csv`, `e-v.dat`, `qha_grid.csv/npz`, and summary; and
   `phase_diagram/phase_map.csv`, boundaries, plots, and summary exist.
+- For completed anharmonic methods, confirm `fc2.hdf5`, `fc3.hdf5`,
+  `phono3py_params.yaml`, `kappa.hdf5`, `thermal_conductivity.csv`, the selected
+  lifetime CSV, three plots, and `summary.json`; report force and q-point counts
+  when incomplete.
 - If VASP is selected, report readiness counts and require complete parseable
   `vasprun.xml` results rather than treating OUTCAR presence as completion.
 - Read stability and coverage flags from result summaries. Disclose significant

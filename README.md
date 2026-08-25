@@ -1,11 +1,12 @@
 # phonon-kit
 
-`phonon-kit` 是一个面向日常使用的有限位移声子与准谐近似工作流。它用 YAML
-管理结构、DPA3/DPA4、VASP/DFT、声子谱、振动热力学、多相 QHA 和 P–T 相图，
-并把临时文件与最终结果严格分开。全局命令为 `ph`。
+`phonon-kit` 是一个面向日常使用的有限位移声子、三阶非谐声子与准谐近似工作流。
+它用 YAML 管理结构、DPA3/DPA4、VASP/DFT、声子谱、振动热力学、RTA 晶格热
+导率、多相 QHA 和 P–T 相图，并把临时文件与最终结果严格分开。全局命令为 `ph`。
 
-普通 `ph run` 处理一个结构的谐声子；独立的 `ph qha` 子命令处理相同组成的多个
-晶相。项目不实现 VASP-DFPT、变组成凸包、非谐自由能、熔化或模型训练。
+普通 `ph run` 处理一个结构的谐声子，`ph anh` 使用 DeepMD + Phono3py 处理三阶
+声子，`ph qha` 处理相同组成的多个晶相。项目不实现 VASP-DFPT、变组成凸包、
+四阶声子、熔化或模型训练。
 
 ## 1. 安装
 
@@ -25,7 +26,7 @@ ph --version
 ```
 
 DeepMD 和 Torch 不会被安装器升级，避免破坏已经可用的 GPU 环境。Phonopy、
-ASE、SeeK-path、spglib、Matplotlib 和 DPDispatcher 会作为 Python 依赖安装。
+Phono3py、ASE、SeeK-path、spglib、Matplotlib 和 DPDispatcher 会作为 Python 依赖安装。
 `requirements-verified.txt` 记录了本机完整验收时使用的依赖版本；它不负责安装
 DeepMD/Torch。
 
@@ -45,6 +46,18 @@ ph status config.yaml
 
 `ph init` 会提供一个 SiO₂ 示例结构和使用内置 DPA4 的配置。默认不启用 VASP，
 所以只要 GPU/DeepMD 可用即可运行。
+
+三阶声子先预估任务量，再启动：
+
+```bash
+ph anh init sio2_anh
+cd sio2_anh
+ph anh plan anh.yaml
+ph anh run anh.yaml
+ph anh status anh.yaml
+```
+
+系统三阶位移数可能达到数千，务必先执行 `plan`。
 
 运行产生：
 
@@ -283,7 +296,37 @@ CSV、JSON 和图片都会标记 `thermodynamic_stability=false`。这类相图�
 完整字段、VASP 模板、目录结构和结果含义见
 [QHA 配置与使用说明](docs/qha-config-reference.zh-CN.md)。
 
-## 8. 常见问题
+## 8. 三阶非谐声子与 RTA 热导率
+
+三阶工作流不弛豫结构，输入应已经可靠弛豫。所有模型共享相同结构、系统位移和
+q 网格，因此适合比较预训练与微调模型带来的变化：
+
+```text
+POSCAR → 系统有限位移 → DeepMD 力 → fc2/fc3
+       → 三声子散射 gamma → lifetime → RTA kappa(T)
+```
+
+默认 fc2 和 fc3 使用同一超胞；若二阶相互作用需要更长范围，可以设置独立的
+`fc2_supercell`。`subtract_residual_forces` 默认关闭，与普通声子流程的原始力口径
+一致。极性体系可通过 `structure.born_file` 提供 Phonopy BORN 文件启用 NAC。
+
+```bash
+ph anh run anh.yaml              # 相同未完成配置会自动续算
+ph anh run runs/sio2_anh-001 # 案例输入改变后精确恢复
+ph anh plot runs/sio2_anh-001
+```
+
+每个位移力和每个不可约 q 点的散射率都有 checkpoint。主要结果位于
+`results/<method>/`：`fc2.hdf5`、`fc3.hdf5`、`kappa.hdf5`、热导率/寿命 CSV、
+三张 PNG 和 `summary.json`。`gamma` 是半线宽，`linewidth=2*gamma`，寿命为
+`1/(4*pi*gamma)` ps；非正 gamma 对应 `NaN` 寿命。
+
+明显虚频默认不会阻断计算，但图表和摘要会标记为诊断结果。三阶首版只计算纯
+三声子本征 RTA 热导率，不含同位素、边界、电子或四声子散射。超胞、位移幅度和
+q 网格都必须做收敛检查。完整字段见
+[三阶配置说明](docs/anh-config-reference.zh-CN.md)。
+
+## 9. 常见问题
 
 `ph validate` 提示 `.pt2` 无法加载：该冻结模型依赖 GPU、Torch/DeepMD 构建和
 CUDA。先检查 `nvidia-smi`，并确保命令使用正确的 DeepMD Python。也可换用该
@@ -301,10 +344,13 @@ QHA 相图出现灰色区域：至少一个相在对应 P–T 点的拟合平衡
 范围，或 EOS 无效。查看每相的 `volume_points.csv` 和 `qha_grid.csv`，扩大压缩侧
 或膨胀侧体积范围后使用 `--new` 重新计算。
 
-## 9. Hermes Agent Skill
+三阶热导率异常大或不平滑：先检查显著虚频、输入是否充分弛豫、`fc2/fc3`
+超胞和 q 网格是否收敛；有限模型比较不能替代这些收敛性检查。
+
+## 10. Hermes Agent Skill
 
 项目在 `skills/materials-science/phonon-kit/` 内提供可版本化的 Hermes Skill，
-用于配置、运行和诊断普通声子与多相 QHA 工作流。推荐从项目目录直接加载，避免
+用于配置、运行和诊断普通声子、三阶声子与多相 QHA 工作流。推荐从项目目录直接加载，避免
 把 Skill 复制到用户目录后产生两份不同版本。
 
 在 Hermes `config.yaml` 中保留已有配置并加入：
@@ -328,5 +374,5 @@ hermes config get skills --json
 ```
 
 显式调用示例：`/phonon-kit 检查这个 QHA 运行的体积覆盖和虚频警告`。自然语言
-提及 Phonopy、DeepMD/VASP 声子、振动自由能、QHA 或 P–T 相图时也可自动触发。
+提及 Phonopy/Phono3py、DeepMD/VASP 声子、热导率、寿命、QHA 或 P–T 相图时也可自动触发。
 Skill 不会因状态检查而擅自执行 `run`、`resume`、DFT 提交或模型推理。

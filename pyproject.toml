@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phonon-kit"
-version = "0.2.1"
-description = "A resumable Phonopy and multiphase QHA workflow for DeepMD and VASP"
+version = "0.3.0"
+description = "Resumable Phonopy, Phono3py, and multiphase QHA workflows"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -13,9 +13,11 @@ authors = [{name = "phonon-kit contributors"}]
 dependencies = [
   "ase>=3.26",
   "dpdispatcher>=1.0,<2",
+  "h5py>=3.11",
   "matplotlib>=3.8",
   "numpy>=1.26",
   "phonopy==4.4.0",
+  "phono3py==4.4.0",
   "PyYAML>=6",
   "seekpath>=2.1",
   "spglib>=2.4",

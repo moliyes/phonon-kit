@@ -1,3 +1,3 @@
 """phonon-kit: compact DeepMD/VASP finite-displacement phonon workflow."""
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"

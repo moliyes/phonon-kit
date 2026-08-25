@@ -12,6 +12,7 @@ SKILL_PATH = SKILL_ROOT / "SKILL.md"
 EXPECTED_REFERENCES = {
     "references/configuration.md",
     "references/qha-workflow.md",
+    "references/anharmonic-workflow.md",
     "references/results-and-recovery.md",
     "references/scientific-interpretation.md",
 }
@@ -28,7 +29,7 @@ def test_hermes_frontmatter_and_trigger_description() -> None:
     frontmatter, body = _load_skill()
 
     assert frontmatter["name"] == "phonon-kit"
-    assert frontmatter["version"] == "0.1.0"
+    assert frontmatter["version"] == "0.2.0"
     assert frontmatter["platforms"] == ["linux"]
     assert frontmatter["author"] == "moliyes, Hermes Agent"
     assert body
@@ -36,7 +37,7 @@ def test_hermes_frontmatter_and_trigger_description() -> None:
     description = frontmatter["description"]
     assert len(description) <= 60
     assert description.endswith(".")
-    for term in ("Phonopy", "DeepMD", "VASP", "QHA", "phase"):
+    for term in ("Phonopy", "Phono3py", "DeepMD", "VASP", "QHA", "phase"):
         assert term.lower() in description.lower()
 
     hermes = frontmatter["metadata"]["hermes"]
@@ -74,6 +75,7 @@ def test_skill_only_documents_real_ph_commands() -> None:
     )
     top_level = set(re.findall(r"\bph\s+(--version|[a-z][a-z-]*)", content))
     qha_subcommands = set(re.findall(r"\bph\s+qha\s+([a-z][a-z-]*)", content))
+    anh_subcommands = set(re.findall(r"\bph\s+anh\s+([a-z][a-z-]*)", content))
 
     assert top_level <= {
         "--version",
@@ -85,6 +87,7 @@ def test_skill_only_documents_real_ph_commands() -> None:
         "status",
         "plot",
         "qha",
+        "anh",
     }
     assert qha_subcommands <= {
         "init",
@@ -98,6 +101,8 @@ def test_skill_only_documents_real_ph_commands() -> None:
     }
     assert {"init", "validate", "run", "resume", "collect", "status", "plot"} <= top_level
     assert {"init", "validate", "plan", "run", "resume", "collect", "status", "plot"} <= qha_subcommands
+    assert anh_subcommands <= {"init", "plan", "run", "status", "plot"}
+    assert {"init", "plan", "run", "status", "plot"} <= anh_subcommands
 
 
 def test_generated_agent_metadata_matches_skill() -> None:

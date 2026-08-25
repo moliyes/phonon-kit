@@ -33,6 +33,16 @@ def _qha_run_target(target: Path):
     return resolved, None
 
 
+def _anh_run_target(target: Path):
+    from .anh_state import AnhRunPaths
+
+    resolved = target.expanduser().resolve()
+    root = resolved if resolved.is_dir() else resolved.parent
+    if (root / "state.json").is_file() and (root / "config.resolved.yaml").is_file():
+        return root / "config.resolved.yaml", AnhRunPaths(root)
+    return resolved, None
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ph", description="DeepMD/VASP finite-displacement phonon workflow")
     parser.add_argument("--version", action="version", version=f"phonon-kit {__version__}")
@@ -88,12 +98,65 @@ def build_parser() -> argparse.ArgumentParser:
     qha_status.add_argument("target", type=Path, help="qha.yaml 或具体 QHA 运行目录")
     qha_plot = qha_sub.add_parser("plot", help="从现有 QHA 数值结果重新绘图")
     qha_plot.add_argument("config", type=Path, help="qha.yaml、运行目录或运行内 config.resolved.yaml")
+
+    anh = sub.add_parser("anh", help="DeepMD + Phono3py 三阶非谐声子和 RTA 热导率")
+    anh_sub = anh.add_subparsers(dest="anh_command", required=True)
+    anh_init = anh_sub.add_parser("init", help="创建三阶声子案例")
+    anh_init.add_argument("target", type=Path)
+    anh_plan = anh_sub.add_parser("plan", help="预览系统位移和力评估数量，不加载模型")
+    anh_plan.add_argument("config", nargs="?", type=Path, default=Path("anh.yaml"))
+    anh_run = anh_sub.add_parser("run", help="开始或自动续算三阶声子任务")
+    anh_run.add_argument("config", nargs="?", type=Path, default=Path("anh.yaml"), help="anh.yaml 或具体运行目录")
+    anh_run.add_argument("--new", action="store_true", help="保留现场并创建新版本")
+    anh_status = anh_sub.add_parser("status", help="显示三阶任务状态")
+    anh_status.add_argument("target", nargs="?", type=Path, default=Path("anh.yaml"), help="anh.yaml 或具体运行目录")
+    anh_plot = anh_sub.add_parser("plot", help="从已有三阶数值结果重新生成 PNG")
+    anh_plot.add_argument("target", nargs="?", type=Path, default=Path("anh.yaml"), help="anh.yaml 或具体运行目录")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.command == "anh":
+            from .anh_config import load_anh_config
+            from .anh_initializer import init_anh_case
+            from .anh_runner import anh_status_text, replot_anh, run_anh_config
+            from .anh_state import AnhRunPaths, latest_anh_run
+            from .anh_structure import displacement_plan
+
+            if args.anh_command == "init":
+                target = init_anh_case(args.target)
+                print(f"三阶声子案例已创建: {target}")
+                print(f"下一步: cd {target} && ph anh plan anh.yaml")
+                return 0
+            target = args.target if args.anh_command in {"status", "plot"} else args.config
+            config_path, explicit_paths = _anh_run_target(target)
+            config = load_anh_config(config_path)
+            if args.anh_command == "plan":
+                print(json.dumps(displacement_plan(config), indent=2, ensure_ascii=False))
+                return 0
+            if args.anh_command == "run":
+                paths, state, created = run_anh_config(config, force_new=args.new, paths=explicit_paths)
+                print(("新建三阶运行: " if created else "使用三阶运行: ") + str(paths.root))
+                print(anh_status_text(paths, state))
+                return 0
+            if args.anh_command == "status":
+                if explicit_paths is not None:
+                    print(anh_status_text(explicit_paths, load_json(explicit_paths.state_file)))
+                    return 0
+                latest = latest_anh_run(config)
+                if latest is None:
+                    print("尚无三阶运行")
+                    return 0
+                print(anh_status_text(*latest))
+                return 0
+            if args.anh_command == "plot":
+                paths, state = replot_anh(config, paths=explicit_paths)
+                print(f"三阶 PNG 已重新生成: {paths.results}")
+                print(anh_status_text(paths, state))
+                return 0
+            raise AssertionError(args.anh_command)
         if args.command == "qha":
             from .qha_config import load_qha_config
             from .qha_initializer import init_qha_case
