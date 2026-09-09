@@ -133,7 +133,9 @@ project:
 |---|---:|---:|---|---|
 | `supercell` | 否 | `[2, 2, 2]` | 三个正整数 | 沿三个晶格方向扩胞的倍数。当前只支持对角超胞，例如 `[3, 3, 2]`。超胞越大，单个位移计算越贵，但通常能包含更远程的力常数。 |
 | `displacement_angstrom` | 否 | `0.01` | 大于 `0` | Phonopy 有限位移幅度。常见值约为 `0.01` Å；过小容易放大数值噪声，过大可能超出谐近似。 |
-| `primitive` | 否 | `auto` | 只能为 `auto` | 让 Phonopy 自动确定原胞。当前不能手动提供 primitive matrix。 |
+| `displacement_plusminus` | 否 | `auto` | `auto` / `true` / `false` | 是否为每个位移显式生成正、负两个构型。`auto` 沿用 Phonopy 默认判定。 |
+| `displacement_diagonal` | 否 | `true` | `true` / `false` | 是否允许非笛卡尔轴向的对角位移。复现只使用 x/y/z 位移的旧数据时设为 `false`。 |
+| `primitive` | 否 | `auto` | `auto` / `P` | `auto` 让 Phonopy 自动约化；`P` 使用恒等 primitive matrix，保留输入晶胞及其全部声子支。 |
 | `symmetry_tolerance` | 否 | `1.0e-5` | 大于 `0` | Phonopy/spglib 对称性容差（Å）。它会影响识别到的对称性以及位移结构数量。不要仅为减少位移数量而随意调大。 |
 
 `supercell` 是最重要的收敛参数之一。正式结果应检查增大超胞后关键频率和自由能是否基本不变。
@@ -142,8 +144,9 @@ project:
 
 | 字段 | 必填 | 默认值 | 可选值/限制 | 说明 |
 |---|---:|---:|---|---|
-| `path` | 否 | `auto` | 只能为 `auto` | 使用 SeeK-path 根据自动识别的原胞生成高对称 q 点路径。所有方法共享同一条路径。 |
+| `path` | 否 | `auto` | `auto` 或 q 点列表 | `auto` 使用 SeeK-path；也可给出至少两个三维约化 q 点，相邻点依次连成路径。所有方法共享同一条路径。 |
 | `points_per_segment` | 否 | `101` | 大于等于 `2` 的整数 | 每段高对称路径的采样点数。增大后曲线更平滑，但不会改变力计算数量。 |
+| `labels` | 否 | 无 | 字符串列表 | 仅用于显式路径，数量必须和 `path` 中的 q 点相同。 |
 
 ### `mesh`：DOS 与热力学 q 网格
 
@@ -236,7 +239,7 @@ methods:
 - `relaxation.enabled: true` 时，`relaxation.method` 必须引用一个已启用的 DeepMD 方法。
 - `.pt2` 模型不能设置非空 `head`。
 - 当前最多启用一个 VASP 方法，但可以启用任意多个 DeepMD 方法。
-- `primitive` 和 `band.path` 当前只能为 `auto`。
+- `primitive` 可为 `auto` 或恒等矩阵标记 `P`；显式 `band.path` 使用约化 q 坐标。
 - `imaginary_policy` 当前只能为 `exclude`。
 - `supercell` 和 `mesh` 当前只接受三个正整数，不接受一般的 3×3 矩阵。
 - `POTCAR` 中元素顺序必须与输入结构的元素顺序一致。

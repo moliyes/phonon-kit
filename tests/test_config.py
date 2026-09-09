@@ -49,3 +49,30 @@ def test_resolved_snapshot_is_valid_config(config_path: Path):
     snapshot.write_text(yaml.safe_dump(config.resolved_dict(), sort_keys=False), encoding="utf-8")
     restored = load_config(snapshot)
     assert restored.fingerprint() == config.fingerprint()
+
+
+def test_explicit_primitive_displacements_and_band_path(config_path: Path):
+    text = config_path.read_text(encoding="utf-8")
+    text = text.replace(
+        "  displacement_angstrom: 0.01\n  primitive: auto",
+        "  displacement_angstrom: 0.01\n"
+        "  displacement_plusminus: true\n"
+        "  displacement_diagonal: false\n"
+        "  primitive: P",
+    )
+    text = text.replace(
+        "    path: auto\n    points_per_segment: 11",
+        "    path:\n"
+        "      - [-0.5, 0.0, 0.0]\n"
+        "      - [0.5, 0.0, 0.0]\n"
+        "    labels: ['-X', 'X']\n"
+        "    points_per_segment: 201",
+    )
+    config_path.write_text(text, encoding="utf-8")
+    config = load_config(config_path)
+    assert config.phonon.primitive == "P"
+    assert config.phonon.displacement_plusminus is True
+    assert config.phonon.displacement_diagonal is False
+    assert config.phonon.band.path == ((-0.5, 0.0, 0.0), (0.5, 0.0, 0.0))
+    assert config.phonon.band.labels == ("-X", "X")
+    assert config.phonon.band.points_per_segment == 201

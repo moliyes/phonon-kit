@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 from .config import Config
-from .structure import phonopy_to_ase
+from .structure import make_band_path, phonopy_to_ase
 from .util import atomic_write_json, load_json
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/phonon-kit-matplotlib")
@@ -70,19 +70,7 @@ def _band_path(config: Config, phonon, phonopy_yaml: Path, resultdir: Path) -> d
     if source.is_file():
         data = load_json(source)
     else:
-        from phonopy.phonon.band_structure import get_band_qpoints_by_seekpath
-
-        bands, labels, connections = get_band_qpoints_by_seekpath(
-            phonon.primitive,
-            npoints=config.phonon.band.points_per_segment,
-            is_const_interval=True,
-        )
-        data = {
-            "bands": [np.asarray(band, dtype=float).tolist() for band in bands],
-            "labels": list(labels),
-            "path_connections": [bool(value) for value in connections],
-            "points_per_segment": config.phonon.band.points_per_segment,
-        }
+        data = make_band_path(config, phonon.primitive)
     atomic_write_json(resultdir / "band_path.json", data)
     return data
 

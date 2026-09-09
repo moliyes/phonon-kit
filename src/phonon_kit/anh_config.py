@@ -32,6 +32,8 @@ class AnharmonicConfig:
     supercell: tuple[int, int, int] = (2, 2, 2)
     fc2_supercell: tuple[int, int, int] | None = None
     displacement_angstrom: float = 0.03
+    fc2_displacement_angstrom: float | None = None
+    fc2_is_diagonal: bool = False
     primitive: Literal["auto"] = "auto"
     symmetry_tolerance: float = 1.0e-5
     subtract_residual_forces: bool = False
@@ -47,6 +49,13 @@ class AnharmonicConfig:
     def temperatures(self) -> list[float]:
         count = int(round((self.temperature_max_k - self.temperature_min_k) / self.temperature_step_k))
         return [self.temperature_min_k + index * self.temperature_step_k for index in range(count + 1)]
+
+    @property
+    def resolved_fc2_displacement_angstrom(self) -> float:
+        """Return the fc2 distance, falling back to the fc3 distance."""
+        if self.fc2_displacement_angstrom is None:
+            return self.displacement_angstrom
+        return self.fc2_displacement_angstrom
 
 
 @dataclass(frozen=True)
@@ -157,17 +166,23 @@ def load_anh_config(path: str | Path, *, require_inputs: bool = True) -> AnhConf
 
     anh_raw = _mapping(root.get("anharmonic", {}), "anharmonic")
     allowed = {
-        "supercell", "fc2_supercell", "displacement_angstrom", "primitive",
+        "supercell", "fc2_supercell", "displacement_angstrom",
+        "fc2_displacement_angstrom", "fc2_is_diagonal", "primitive",
         "symmetry_tolerance", "subtract_residual_forces", "mesh",
         "temperature_min_k", "temperature_max_k", "temperature_step_k",
         "lifetime_temperature_k", "significant_imaginary_thz", "continue_on_imaginary",
     }
     _strict(anh_raw, allowed, "anharmonic")
     fc2_value = anh_raw.get("fc2_supercell")
+    fc2_displacement_value = anh_raw.get("fc2_displacement_angstrom")
     anh = AnharmonicConfig(
         supercell=_triple(anh_raw.get("supercell", [2, 2, 2]), "anharmonic.supercell"),
         fc2_supercell=None if fc2_value is None else _triple(fc2_value, "anharmonic.fc2_supercell"),
         displacement_angstrom=float(anh_raw.get("displacement_angstrom", 0.03)),
+        fc2_displacement_angstrom=(
+            None if fc2_displacement_value is None else float(fc2_displacement_value)
+        ),
+        fc2_is_diagonal=bool(anh_raw.get("fc2_is_diagonal", False)),
         primitive=str(anh_raw.get("primitive", "auto")),  # type: ignore[arg-type]
         symmetry_tolerance=float(anh_raw.get("symmetry_tolerance", 1.0e-5)),
         subtract_residual_forces=bool(anh_raw.get("subtract_residual_forces", False)),
@@ -181,8 +196,16 @@ def load_anh_config(path: str | Path, *, require_inputs: bool = True) -> AnhConf
     )
     if anh.primitive != "auto":
         raise ConfigError("anharmonic.primitive 当前仅支持 auto")
-    if anh.displacement_angstrom <= 0 or anh.symmetry_tolerance <= 0:
+    if (
+        anh.displacement_angstrom <= 0
+        or anh.resolved_fc2_displacement_angstrom <= 0
+        or anh.symmetry_tolerance <= 0
+    ):
         raise ConfigError("位移距离和对称性容差必须为正数")
+    if (
+        anh.fc2_displacement_angstrom is not None or anh.fc2_is_diagonal
+    ) and anh.fc2_supercell is None:
+        raise ConfigError("设置 fc2 独立位移参数时必须同时设置独立的 fc2_supercell")
     if anh.temperature_min_k <= 0 or anh.temperature_max_k < anh.temperature_min_k or anh.temperature_step_k <= 0:
         raise ConfigError("三阶热导率温度范围无效，且最低温度必须大于 0 K")
     span = (anh.temperature_max_k - anh.temperature_min_k) / anh.temperature_step_k

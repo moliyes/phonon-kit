@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 import numpy as np
+import pytest
 from ase.build import bulk
 from ase.calculators.emt import EMT
 from ase.io import write
@@ -25,7 +26,14 @@ from phonon_kit.deepmd_worker import _atomic_npz
 from phonon_kit.structure import phonopy_to_ase
 
 
-def _config(root: Path, *, subtract: bool = False, separate_fc2: bool = False) -> Path:
+def _config(
+    root: Path,
+    *,
+    subtract: bool = False,
+    separate_fc2: bool = False,
+    fc2_distance: float | None = None,
+    fc2_is_diagonal: bool = False,
+) -> Path:
     write(root / "POSCAR", bulk("Al", "fcc", a=4.05), format="vasp", direct=True, vasp5=True)
     (root / "model.pth").write_bytes(b"dummy")
     path = root / "anh.yaml"
@@ -39,6 +47,8 @@ anharmonic:
   supercell: [2, 2, 2]
   fc2_supercell: {'[2, 1, 1]' if separate_fc2 else 'null'}
   displacement_angstrom: 0.03
+  fc2_displacement_angstrom: {fc2_distance if fc2_distance is not None else 'null'}
+  fc2_is_diagonal: {str(fc2_is_diagonal).lower()}
   primitive: auto
   symmetry_tolerance: 1.0e-5
   subtract_residual_forces: {str(subtract).lower()}
@@ -129,8 +139,28 @@ def test_optional_residual_force_subtraction_is_recorded(tmp_path: Path) -> None
 
 
 def test_separate_fc2_displacements_produce_fc2(tmp_path: Path) -> None:
-    config = load_anh_config(_config(tmp_path, separate_fc2=True))
+    config = load_anh_config(
+        _config(
+            tmp_path,
+            separate_fc2=True,
+            fc2_distance=0.01,
+            fc2_is_diagonal=True,
+        )
+    )
     disp = tmp_path / "disp"; generate_anh_displacements(config, config.structure.file, disp)
+    ph3 = load_anh_displacements(config, disp / "phono3py_disp.yaml")
+    assert all(
+        np.linalg.norm(item["displacement"]) == pytest.approx(0.03)
+        for item in ph3.dataset["first_atoms"]
+    )
+    assert all(
+        np.linalg.norm(item["displacement"]) == pytest.approx(0.01)
+        for item in ph3.phonon_dataset["first_atoms"]
+    )
+    manifest = json.loads((disp / "manifest.json").read_text())
+    assert manifest["fc3_displacement_angstrom"] == 0.03
+    assert manifest["fc2_displacement_angstrom"] == 0.01
+    assert manifest["fc2_is_diagonal"] is True
     work = tmp_path / "work"; results = tmp_path / "results"
     _write_emt_checkpoints(config, disp / "phono3py_disp.yaml", work)
     summary = produce_force_constants(config, disp / "phono3py_disp.yaml", work, results)

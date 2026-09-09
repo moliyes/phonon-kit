@@ -55,6 +55,9 @@ def test_anh_init_and_defaults(tmp_path: Path) -> None:
     config = load_anh_config(target / "anh.yaml")
     assert config.anharmonic.supercell == (2, 2, 2)
     assert config.anharmonic.fc2_supercell is None
+    assert config.anharmonic.fc2_displacement_angstrom is None
+    assert config.anharmonic.resolved_fc2_displacement_angstrom == 0.03
+    assert config.anharmonic.fc2_is_diagonal is False
     assert config.anharmonic.subtract_residual_forces is False
 
 
@@ -77,14 +80,38 @@ def test_anh_pt2_rejects_head(tmp_path: Path) -> None:
 def test_anh_plan_counts_separate_fc2_and_residual(tmp_path: Path) -> None:
     path = write_anh_config(
         tmp_path,
-        extra_anh="  fc2_supercell: [2, 1, 1]\n  subtract_residual_forces: true\n",
+        extra_anh=(
+            "  fc2_supercell: [2, 1, 1]\n"
+            "  fc2_displacement_angstrom: 0.01\n"
+            "  fc2_is_diagonal: true\n"
+            "  subtract_residual_forces: true\n"
+        ),
     )
-    plan = displacement_plan(load_anh_config(path))
+    config = load_anh_config(path)
+    plan = displacement_plan(config)
+    assert config.anharmonic.displacement_angstrom == 0.03
+    assert config.anharmonic.fc2_displacement_angstrom == 0.01
+    assert config.anharmonic.fc2_is_diagonal is True
     assert plan["fc2_uses_separate_displacements"] is True
     assert plan["fc3_displacements"] > 0
     assert plan["fc2_displacements"] > 0
     assert plan["residual_evaluations_per_model"] == 2
+    assert plan["fc3_displacement_angstrom"] == 0.03
+    assert plan["fc2_displacement_angstrom"] == 0.01
+    assert plan["fc2_is_diagonal"] is True
     assert plan["total_force_evaluations"] == plan["fc3_displacements"] + plan["fc2_displacements"] + 2
+
+
+def test_fc2_distance_requires_separate_supercell(tmp_path: Path) -> None:
+    path = write_anh_config(tmp_path, extra_anh="  fc2_displacement_angstrom: 0.01\n")
+    with pytest.raises(ConfigError, match="必须同时设置独立的 fc2_supercell"):
+        load_anh_config(path)
+
+
+def test_fc2_diagonal_requires_separate_supercell(tmp_path: Path) -> None:
+    path = write_anh_config(tmp_path, extra_anh="  fc2_is_diagonal: true\n")
+    with pytest.raises(ConfigError, match="必须同时设置独立的 fc2_supercell"):
+        load_anh_config(path)
 
 
 def test_anh_snapshot_is_self_contained_with_born(tmp_path: Path) -> None:

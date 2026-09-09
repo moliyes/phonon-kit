@@ -57,9 +57,19 @@ def build_phono3py(config: AnhConfig, structure: Path):
     return ph3
 
 
+def _generate_displacements(config: AnhConfig, ph3) -> None:
+    """Generate fc3 and, when requested, independent-distance fc2 datasets."""
+    ph3.generate_displacements(distance=config.anharmonic.displacement_angstrom)
+    if ph3.phonon_supercell_matrix is not None:
+        ph3.generate_fc2_displacements(
+            distance=config.anharmonic.resolved_fc2_displacement_angstrom,
+            is_diagonal=config.anharmonic.fc2_is_diagonal,
+        )
+
+
 def displacement_plan(config: AnhConfig) -> dict[str, Any]:
     ph3 = build_phono3py(config, config.structure.file)
-    ph3.generate_displacements(distance=config.anharmonic.displacement_angstrom)
+    _generate_displacements(config, ph3)
     n_fc3 = len(ph3.supercells_with_displacements)
     separate_fc2 = ph3.phonon_supercell_matrix is not None
     n_fc2 = len(ph3.phonon_supercells_with_displacements) if separate_fc2 else 0
@@ -75,6 +85,9 @@ def displacement_plan(config: AnhConfig) -> dict[str, Any]:
         "n_atoms_fc2_supercell": len(ph3.phonon_supercell),
         "fc3_displacements": n_fc3,
         "fc2_displacements": n_fc2,
+        "fc3_displacement_angstrom": config.anharmonic.displacement_angstrom,
+        "fc2_displacement_angstrom": config.anharmonic.resolved_fc2_displacement_angstrom,
+        "fc2_is_diagonal": config.anharmonic.fc2_is_diagonal,
         "residual_evaluations_per_model": residual_per_model,
         "models": list(config.enabled_methods),
         "force_evaluations_per_model": per_model,
@@ -86,7 +99,7 @@ def displacement_plan(config: AnhConfig) -> dict[str, Any]:
 
 def generate_anh_displacements(config: AnhConfig, canonical: Path, outdir: Path) -> dict[str, Any]:
     ph3 = build_phono3py(config, canonical)
-    ph3.generate_displacements(distance=config.anharmonic.displacement_angstrom)
+    _generate_displacements(config, ph3)
     cells = ph3.supercells_with_displacements
     if not cells:
         raise RuntimeError("Phono3py 没有生成三阶位移超胞")
@@ -110,6 +123,9 @@ def generate_anh_displacements(config: AnhConfig, canonical: Path, outdir: Path)
         "n_atoms_fc2_supercell": len(ph3.phonon_supercell),
         "fc3_displacements": len(cells),
         "fc2_displacements": n_fc2,
+        "fc3_displacement_angstrom": config.anharmonic.displacement_angstrom,
+        "fc2_displacement_angstrom": config.anharmonic.resolved_fc2_displacement_angstrom,
+        "fc2_is_diagonal": config.anharmonic.fc2_is_diagonal,
         "residual_evaluations_per_model": residual_count,
         "models": list(config.enabled_methods),
         "force_evaluations_per_model": per_model,

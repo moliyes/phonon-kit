@@ -135,9 +135,15 @@ def anh_status_text(paths: AnhRunPaths, state: dict[str, Any]) -> str:
     lines = [f"run: {paths.root}", f"status: {state.get('status', 'unknown')}", f"updated: {state.get('updated_at', '-')}"]
     displacement = state.get("stages", {}).get("displacements", {})
     if displacement:
-        lines.append(f"fc3 displacements: {displacement.get('fc3_displacements', '?')}")
+        fc3_detail = f"fc3 displacements: {displacement.get('fc3_displacements', '?')}"
+        if "fc3_displacement_angstrom" in displacement:
+            fc3_detail += f" at {displacement['fc3_displacement_angstrom']} Å"
+        lines.append(fc3_detail)
         if displacement.get("fc2_uses_separate_displacements"):
-            lines.append(f"fc2 displacements: {displacement.get('fc2_displacements', '?')} (separate)")
+            fc2_detail = f"fc2 displacements: {displacement.get('fc2_displacements', '?')} (separate)"
+            if "fc2_displacement_angstrom" in displacement:
+                fc2_detail += f" at {displacement['fc2_displacement_angstrom']} Å"
+            lines.append(fc2_detail)
         else:
             lines.append("fc2 displacements: reused from fc3 dataset")
     for name in state.get("selected_methods", []):

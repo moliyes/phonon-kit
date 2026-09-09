@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -39,8 +40,9 @@ class RelaxationConfig:
 
 @dataclass(frozen=True)
 class BandConfig:
-    path: Literal["auto"] = "auto"
+    path: Literal["auto"] | tuple[tuple[float, float, float], ...] = "auto"
     points_per_segment: int = 101
+    labels: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -56,7 +58,9 @@ class ThermalConfig:
 class PhononConfig:
     supercell: tuple[int, int, int] = (2, 2, 2)
     displacement_angstrom: float = 0.01
-    primitive: Literal["auto"] = "auto"
+    displacement_plusminus: Literal["auto"] | bool = "auto"
+    displacement_diagonal: bool = True
+    primitive: Literal["auto", "P"] = "auto"
     symmetry_tolerance: float = 1.0e-5
     band: BandConfig = BandConfig()
     mesh: tuple[int, int, int] = (30, 30, 30)
@@ -217,6 +221,25 @@ def _triple(value: Any, where: str) -> tuple[int, int, int]:
     return result  # type: ignore[return-value]
 
 
+def _band_path(value: Any) -> Literal["auto"] | tuple[tuple[float, float, float], ...]:
+    if value == "auto":
+        return "auto"
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        raise ConfigError("phonon.band.path 必须为 auto，或至少两个三维 q 点")
+    points: list[tuple[float, float, float]] = []
+    for index, point in enumerate(value):
+        if not isinstance(point, (list, tuple)) or len(point) != 3:
+            raise ConfigError(f"phonon.band.path[{index}] 必须恰好包含三个数")
+        try:
+            parsed = tuple(float(component) for component in point)
+        except (TypeError, ValueError) as exc:
+            raise ConfigError(f"phonon.band.path[{index}] 必须恰好包含三个数") from exc
+        if not all(math.isfinite(component) for component in parsed):
+            raise ConfigError(f"phonon.band.path[{index}] 含非有限数值")
+        points.append(parsed)  # type: ignore[arg-type]
+    return tuple(points)
+
+
 def load_config(path: str | Path, *, require_inputs: bool = True) -> Config:
     config_path = Path(path).expanduser().resolve()
     if not config_path.is_file():
@@ -257,12 +280,35 @@ def load_config(path: str | Path, *, require_inputs: bool = True) -> Config:
         raise ConfigError("relaxation 的 fmax、max_steps 和 trajectory_interval 必须为正数")
 
     phonon_raw = _mapping(root.get("phonon", {}), "phonon")
-    _strict(phonon_raw, {"supercell", "displacement_angstrom", "primitive", "symmetry_tolerance", "band", "mesh", "thermal"}, "phonon")
+    _strict(
+        phonon_raw,
+        {
+            "supercell", "displacement_angstrom", "displacement_plusminus",
+            "displacement_diagonal", "primitive", "symmetry_tolerance", "band",
+            "mesh", "thermal",
+        },
+        "phonon",
+    )
     band_raw = _mapping(phonon_raw.get("band", {}), "phonon.band")
-    _strict(band_raw, {"path", "points_per_segment"}, "phonon.band")
-    band = BandConfig(path=str(band_raw.get("path", "auto")), points_per_segment=int(band_raw.get("points_per_segment", 101)))  # type: ignore[arg-type]
-    if band.path != "auto" or band.points_per_segment < 2:
-        raise ConfigError("phonon.band 当前仅支持 path: auto，且 points_per_segment >= 2")
+    _strict(band_raw, {"path", "points_per_segment", "labels"}, "phonon.band")
+    path_value = _band_path(band_raw.get("path", "auto"))
+    labels_value = band_raw.get("labels")
+    labels: tuple[str, ...] | None = None
+    if labels_value is not None:
+        if not isinstance(labels_value, (list, tuple)):
+            raise ConfigError("phonon.band.labels 必须是字符串列表")
+        labels = tuple(str(item) for item in labels_value)
+    band = BandConfig(
+        path=path_value,
+        points_per_segment=int(band_raw.get("points_per_segment", 101)),
+        labels=labels,
+    )
+    if band.points_per_segment < 2:
+        raise ConfigError("phonon.band.points_per_segment 必须 >= 2")
+    if band.path == "auto" and band.labels is not None:
+        raise ConfigError("phonon.band.path 为 auto 时不能手动设置 labels")
+    if band.path != "auto" and band.labels is not None and len(band.labels) != len(band.path):
+        raise ConfigError("显式 phonon.band.labels 数量必须与 path 的 q 点数量一致")
     thermal_raw = _mapping(phonon_raw.get("thermal", {}), "phonon.thermal")
     _strict(thermal_raw, {"temperature_min_k", "temperature_max_k", "temperature_step_k", "imaginary_policy", "significant_imaginary_thz"}, "phonon.thermal")
     thermal = ThermalConfig(
@@ -278,17 +324,28 @@ def load_config(path: str | Path, *, require_inputs: bool = True) -> Config:
         raise ConfigError("thermal 温度范围无效")
     if thermal.significant_imaginary_thz > 0:
         raise ConfigError("significant_imaginary_thz 应为 0 或负数")
+    plusminus_value = phonon_raw.get("displacement_plusminus", "auto")
+    if plusminus_value != "auto" and not isinstance(plusminus_value, bool):
+        raise ConfigError("phonon.displacement_plusminus 必须为 auto、true 或 false")
+    diagonal_value = phonon_raw.get("displacement_diagonal", True)
+    if not isinstance(diagonal_value, bool):
+        raise ConfigError("phonon.displacement_diagonal 必须为 true 或 false")
+    primitive_value = str(phonon_raw.get("primitive", "auto"))
+    if primitive_value not in {"auto", "P"}:
+        raise ConfigError("phonon.primitive 必须为 auto 或 P")
     phonon = PhononConfig(
         supercell=_triple(phonon_raw.get("supercell", [2, 2, 2]), "phonon.supercell"),
         displacement_angstrom=float(phonon_raw.get("displacement_angstrom", 0.01)),
-        primitive=str(phonon_raw.get("primitive", "auto")),  # type: ignore[arg-type]
+        displacement_plusminus=plusminus_value,  # type: ignore[arg-type]
+        displacement_diagonal=diagonal_value,
+        primitive=primitive_value,  # type: ignore[arg-type]
         symmetry_tolerance=float(phonon_raw.get("symmetry_tolerance", 1.0e-5)),
         band=band,
         mesh=_triple(phonon_raw.get("mesh", [30, 30, 30]), "phonon.mesh"),
         thermal=thermal,
     )
-    if phonon.displacement_angstrom <= 0 or phonon.symmetry_tolerance <= 0 or phonon.primitive != "auto":
-        raise ConfigError("displacement/symmetry_tolerance 必须为正；primitive 当前仅支持 auto")
+    if phonon.displacement_angstrom <= 0 or phonon.symmetry_tolerance <= 0:
+        raise ConfigError("displacement_angstrom 和 symmetry_tolerance 必须为正")
 
     methods_raw = _mapping(root.get("methods"), "methods")
     if not methods_raw:

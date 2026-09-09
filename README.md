@@ -95,6 +95,8 @@ DPA 模型和一个 VASP 参考。
 phonon:
   supercell: [2, 2, 2]          # 有限位移超胞
   displacement_angstrom: 0.01   # 位移幅度，Å
+  displacement_plusminus: auto  # 可设 true，强制生成正负位移
+  displacement_diagonal: true   # false 时只使用 x/y/z 轴向位移
   primitive: auto
   symmetry_tolerance: 1.0e-5
   band:
@@ -111,6 +113,9 @@ phonon:
 
 所有方法复用同一个 `phonopy_disp.yaml` 和同一条 q 路径。更改超胞、位移、结构、
 模型或模板后，配置指纹随之变化，不会把旧力数组混进新任务。
+
+复现已有基准时可将 `primitive` 设为 `P` 来保留输入晶胞，并把 `band.path`
+写成显式约化 q 点列表；这可避免自动约胞或自动选路改变比较口径。
 
 ### DPA3/DPA4
 
@@ -306,9 +311,12 @@ POSCAR → 系统有限位移 → DeepMD 力 → fc2/fc3
        → 三声子散射 gamma → lifetime → RTA kappa(T)
 ```
 
-默认 fc2 和 fc3 使用同一超胞；若二阶相互作用需要更长范围，可以设置独立的
-`fc2_supercell`。`subtract_residual_forces` 默认关闭，与普通声子流程的原始力口径
-一致。极性体系可通过 `structure.born_file` 提供 Phonopy BORN 文件启用 NAC。
+默认 fc2 和 fc3 使用同一超胞及位移幅度；若二阶相互作用需要更长范围，可以设置
+独立的 `fc2_supercell`。此时还可用 `fc2_displacement_angstrom` 单独指定 fc2
+位移幅度，并用 `fc2_is_diagonal` 控制是否允许非轴向 fc2 位移；不设置则沿用 fc3
+的 `displacement_angstrom`。`subtract_residual_forces`
+默认关闭，与普通声子流程的原始力口径一致。极性体系可通过
+`structure.born_file` 提供 Phonopy BORN 文件启用 NAC。
 
 ```bash
 ph anh run anh.yaml              # 相同未完成配置会自动续算

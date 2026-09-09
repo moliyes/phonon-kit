@@ -21,6 +21,8 @@ anharmonic:
   supercell: [2, 2, 2]
   fc2_supercell: null
   displacement_angstrom: 0.03
+  fc2_displacement_angstrom: null
+  fc2_is_diagonal: false
   primitive: auto
   symmetry_tolerance: 1.0e-5
   subtract_residual_forces: false

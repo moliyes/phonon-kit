@@ -17,6 +17,8 @@ anharmonic:
   supercell: [2, 2, 2]
   fc2_supercell: null
   displacement_angstrom: 0.03
+  fc2_displacement_angstrom: null
+  fc2_is_diagonal: false
   primitive: auto
   symmetry_tolerance: 1.0e-5
   subtract_residual_forces: false
@@ -51,7 +53,9 @@ methods:
 | `structure.born_file` | `null` | 可选 Phonopy `BORN` 文件；提供后启用 NAC。Born 电荷必须与自动 primitive cell 一致。 |
 | `anharmonic.supercell` | `[2,2,2]` | fc3 对角超胞，三个正整数。 |
 | `anharmonic.fc2_supercell` | `null` | fc2 超胞；`null` 表示从 fc3 位移数据同时得到 fc2。二阶相互作用更长程时可设更大值。 |
-| `anharmonic.displacement_angstrom` | `0.03` | 系统有限位移幅度，单位 Å。过小放大力噪声，过大引入高阶响应。 |
+| `anharmonic.displacement_angstrom` | `0.03` | fc3 有限位移幅度，单位 Å；旧配置中也作为 fc2 默认值。过小放大力噪声，过大引入高阶响应。 |
+| `anharmonic.fc2_displacement_angstrom` | `null` | 独立 fc2 位移幅度，单位 Å。`null` 表示沿用 `displacement_angstrom`；设置数值时必须同时设置独立的 `fc2_supercell`。 |
+| `anharmonic.fc2_is_diagonal` | `false` | 是否允许 fc2 使用非轴向位移以减少位移数；设置为 `true` 时必须同时设置独立的 `fc2_supercell`。默认 `false` 与 Phono3py 的 fc3/fc2 联合生成口径一致。 |
 | `anharmonic.primitive` | `auto` | 当前只能为 `auto`。 |
 | `anharmonic.symmetry_tolerance` | `1e-5` | 对称性识别容差，单位 Å；会改变位移数。 |
 | `anharmonic.subtract_residual_forces` | `false` | 是否逐模型计算完美超胞力并从位移力中扣除。默认保留原始力。 |
@@ -79,6 +83,22 @@ ph anh status anh.yaml
 系统三阶位移可能远多于二阶位移。`plan` 给出 fc3/fc2 位移数、超胞原子数、模型
 数及总力评估数，但不加载模型。每个位移写入独立 NPZ；散射阶段每个不可约 q 点
 写入 Phono3py 官方 HDF5。再次执行同一 `run` 只补缺失项。
+
+若 fc2 和 fc3 需要不同位移幅度，必须同时使用独立 fc2 超胞，例如：
+
+```yaml
+anharmonic:
+  supercell: [1, 1, 1]
+  fc2_supercell: [2, 2, 2]
+  displacement_angstrom: 0.03
+  fc2_displacement_angstrom: 0.01
+  fc2_is_diagonal: true
+```
+
+生成的 `phono3py_disp.yaml` 会分别保存两套位移，`manifest.json` 同时记录
+`fc3_displacement_angstrom`、`fc2_displacement_angstrom` 和
+`fc2_is_diagonal`。若不设置独立
+`fc2_supercell`，fc2 从 fc3 数据集一并拟合，因而不能使用另一种位移幅度。
 
 若案例级结构、模型或 YAML 已改变，恢复旧任务应直接传运行目录：
 
