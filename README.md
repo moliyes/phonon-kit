@@ -102,6 +102,11 @@ phonon:
   band:
     path: auto                   # SeeK-path 自动路径
     points_per_segment: 101
+  # 可选：将无序超胞声子谱展开到理想参考原胞
+  # unfolding:
+  #   reference_supercell: inputs/SPOSCAR-Ref.vasp
+  #   supercell_matrix: [[4, 0, 0], [0, 2, 0], [0, 0, 4]]
+  #   mapping_tolerance_angstrom: 0.2
   mesh: [30, 30, 30]            # DOS 与热力学 q 网格
   thermal:
     temperature_min_k: 0
@@ -113,6 +118,19 @@ phonon:
 
 所有方法复用同一个 `phonopy_disp.yaml` 和同一条 q 路径。更改超胞、位移、结构、
 模型或模板后，配置指纹随之变化，不会把旧力数组混进新任务。
+
+启用 `phonon.unfolding` 后，显式 `band.path` 按参考原胞的约化倒空间坐标解释，
+每个方法会额外生成 `unfolding_data.npz`、`unfolding_summary.json` 和
+`phonon_unfolded.png`。默认图使用线性色标的谱函数强度和 `0.04 THz` 高斯展宽；
+未经筛选的逐模频率与权重完整保存在 NPZ 中。已有运行可直接补算：
+
+```bash
+ph unfold runs/sio2-001
+ph unfold runs/old-run --config config.yaml  # 旧快照没有 unfolding 配置时
+```
+
+补算只读取已有 `phonopy_params.yaml`，不会重新计算位移力。中断时按 q 路径分段
+续算；`ph plot` 只使用已有 unfolding 数值文件重绘。
 
 复现已有基准时可将 `primitive` 设为 `P` 来保留输入晶胞，并把 `band.path`
 写成显式约化 q 点列表；这可避免自动约胞或自动选路改变比较口径。
@@ -216,6 +234,9 @@ ph resume runs/sio2-001 --wait
 - `band.yaml`、`total_dos.dat`、`thermal_properties.yaml/csv`
 - `phonon_band.png`、`phonon_band_dos.png`、`thermal_properties.png`
 - `summary.json`
+
+启用 unfolding 时还会生成 `unfolding_data.npz`、`unfolding_summary.json` 和
+`phonon_unfolded.png`。
 
 `thermal_properties.csv` 同时给出 Phonopy 摩尔单位和 eV/atom。自由能是谐振动
 自由能，包含零点能，不包含结构静态能、电子自由能或 `PV` 项。

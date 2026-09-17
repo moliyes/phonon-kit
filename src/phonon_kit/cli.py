@@ -9,7 +9,7 @@ from . import __version__
 from .config import load_config
 from .errors import PhononKitError
 from .initializer import init_case
-from .runner import collect_config, replot_config, resume_config, run_config, status_text
+from .runner import collect_config, replot_config, resume_config, run_config, status_text, unfold_run
 from .state import RunPaths, latest_run
 from .util import load_json
 from .validation import validate_runtime
@@ -73,6 +73,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     plot = sub.add_parser("plot", help="从已有结果重新生成 PNG")
     plot.add_argument("config", type=Path, help="config.yaml、运行目录或运行内 config.resolved.yaml")
+
+    unfold = sub.add_parser("unfold", help="从已有二阶力常数生成展开声子谱")
+    unfold.add_argument("target", type=Path, help="已完成的运行目录")
+    unfold.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="为旧运行提供含 phonon.unfolding 的当前配置",
+    )
 
     qha = sub.add_parser("qha", help="多相准谐近似和 P-T 相图工作流")
     qha_sub = qha.add_subparsers(dest="qha_command", required=True)
@@ -226,6 +235,16 @@ def main(argv: list[str] | None = None) -> int:
             paths = RunPaths(args.target.resolve())
             state = load_json(paths.state_file)
             print(status_text(paths, state))
+            return 0
+
+        if args.command == "unfold":
+            _, explicit_paths = _single_run_target(args.target)
+            if explicit_paths is None:
+                raise PhononKitError(f"unfold 目标必须是包含 state.json 的运行目录: {args.target}")
+            override = load_config(args.config) if args.config is not None else None
+            summaries = unfold_run(explicit_paths, config_override=override)
+            print(f"展开声子谱已生成: {explicit_paths.results}")
+            print(json.dumps(summaries, indent=2, ensure_ascii=False))
             return 0
 
         config_path = args.target if args.command == "status" else args.config

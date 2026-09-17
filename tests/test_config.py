@@ -76,3 +76,51 @@ def test_explicit_primitive_displacements_and_band_path(config_path: Path):
     assert config.phonon.band.path == ((-0.5, 0.0, 0.0), (0.5, 0.0, 0.0))
     assert config.phonon.band.labels == ("-X", "X")
     assert config.phonon.band.points_per_segment == 201
+
+
+def test_unfolding_config_requires_explicit_path_and_valid_matrix(config_path: Path):
+    reference = config_path.parent / "SPOSCAR-Ref.vasp"
+    reference.write_text((config_path.parent / "POSCAR").read_text(encoding="utf-8"), encoding="utf-8")
+    text = config_path.read_text(encoding="utf-8").replace(
+        "    path: auto\n    points_per_segment: 11",
+        "    path:\n      - [0, 0, 0]\n      - [0.5, 0, 0]\n    labels: [G, X]\n"
+        "    points_per_segment: 11",
+    )
+    text = text.replace(
+        "  mesh: [5, 5, 5]",
+        "  mesh: [5, 5, 5]\n"
+        "  unfolding:\n"
+        "    reference_supercell: SPOSCAR-Ref.vasp\n"
+        "    supercell_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]",
+    )
+    config_path.write_text(text, encoding="utf-8")
+    config = load_config(config_path)
+    assert config.phonon.unfolding is not None
+    assert config.phonon.unfolding.mapping_tolerance_angstrom == 0.2
+    fingerprint = config.fingerprint()
+    reference.write_text(reference.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    assert load_config(config_path).fingerprint() != fingerprint
+
+    config_path.write_text(text.replace("[[1, 0, 0], [0, 1, 0], [0, 0, 1]]", "[[1, 0, 0], [0, 0, 0], [0, 0, 1]]"), encoding="utf-8")
+    with pytest.raises(ConfigError, match="行列式"):
+        load_config(config_path)
+
+
+def test_unfolding_rejects_auto_path_and_missing_reference(config_path: Path):
+    text = config_path.read_text(encoding="utf-8").replace(
+        "  mesh: [5, 5, 5]",
+        "  mesh: [5, 5, 5]\n"
+        "  unfolding:\n"
+        "    reference_supercell: missing.vasp\n"
+        "    supercell_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]",
+    )
+    config_path.write_text(text, encoding="utf-8")
+    with pytest.raises(ConfigError, match="显式设置"):
+        load_config(config_path)
+
+    config_path.write_text(
+        text.replace("    path: auto", "    path: [[0, 0, 0], [0.5, 0, 0]]"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="参考超胞不存在"):
+        load_config(config_path)

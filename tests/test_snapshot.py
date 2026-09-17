@@ -91,6 +91,28 @@ def test_deepmd_model_is_copied_into_run(tmp_path: Path, config_path: Path):
     assert method.model.read_bytes() == b"dummy-model"
 
 
+def test_unfolding_reference_is_copied_into_run(tmp_path: Path, config_path: Path):
+    reference = config_path.parent / "SPOSCAR-Ref.vasp"
+    reference.write_text((config_path.parent / "POSCAR").read_text(encoding="utf-8"), encoding="utf-8")
+    text = config_path.read_text(encoding="utf-8")
+    text = text.replace("    path: auto", "    path: [[0, 0, 0], [0.5, 0, 0]]")
+    text = text.replace(
+        "  mesh: [5, 5, 5]",
+        "  mesh: [5, 5, 5]\n"
+        "  unfolding:\n"
+        "    reference_supercell: SPOSCAR-Ref.vasp\n"
+        "    supercell_matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]",
+    )
+    config_path.write_text(text, encoding="utf-8")
+    source = load_config(config_path)
+    paths, _, _ = choose_run(source, ["dp"])
+    snapshot = create_config_snapshot(source, paths.root)
+    assert snapshot.phonon.unfolding is not None
+    copied = snapshot.phonon.unfolding.reference_supercell
+    assert copied == paths.root / "inputs" / "unfolding" / "SPOSCAR-Ref.vasp"
+    assert copied.read_text(encoding="utf-8") == reference.read_text(encoding="utf-8")
+
+
 def test_force_new_runs_keep_independent_input_snapshots(config_path: Path):
     first_config = load_config(config_path)
     first_paths, _, _ = choose_run(first_config, ["dp"])

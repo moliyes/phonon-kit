@@ -40,6 +40,11 @@ phonon:
   band:
     path: auto
     points_per_segment: 101
+  # 可选；启用时 band.path 必须改为显式参考原胞 q 点
+  # unfolding:
+  #   reference_supercell: inputs/SPOSCAR-Ref.vasp
+  #   supercell_matrix: [[4, 0, 0], [0, 2, 0], [0, 0, 4]]
+  #   mapping_tolerance_angstrom: 0.2
   mesh: [30, 30, 30]
   thermal:
     temperature_min_k: 0
@@ -147,6 +152,22 @@ project:
 | `path` | 否 | `auto` | `auto` 或 q 点列表 | `auto` 使用 SeeK-path；也可给出至少两个三维约化 q 点，相邻点依次连成路径。所有方法共享同一条路径。 |
 | `points_per_segment` | 否 | `101` | 大于等于 `2` 的整数 | 每段高对称路径的采样点数。增大后曲线更平滑，但不会改变力计算数量。 |
 | `labels` | 否 | 无 | 字符串列表 | 仅用于显式路径，数量必须和 `path` 中的 q 点相同。 |
+
+### `phonon.unfolding`：无序超胞声子谱展开
+
+省略该配置块时不计算 unfolding；配置块存在即启用。首版只处理单构型，并复用
+`phonon.band` 的路径、标签和每段点数。
+
+| 字段 | 必填 | 默认值 | 可选值/限制 | 说明 |
+|---|---:|---:|---|---|
+| `reference_supercell` | 是 | 无 | VASP POSCAR 路径 | 与力常数超胞晶格和原子数一致的理想参考超胞；元素标签不参与映射。 |
+| `supercell_matrix` | 是 | 无 | 行列式为正的 3×3 整数矩阵 | 描述参考原胞在完整力常数超胞中的平移重复。 |
+| `mapping_tolerance_angstrom` | 否 | `0.2` | 大于 `0` | 实际合金位置到理想参考位点的一一映射最大距离。 |
+
+启用时 `phonon.band.path` 必须显式给出，并解释为参考原胞的约化倒空间坐标；
+`path: auto` 会被拒绝，以免错误地使用无序胞的高对称路径。运行快照会复制参考
+超胞。已有旧运行可用 `ph unfold <运行目录> --config <当前配置>` 补算，不重新
+计算位移力。
 
 ### `mesh`：DOS 与热力学 q 网格
 

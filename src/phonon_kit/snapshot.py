@@ -57,6 +57,13 @@ def create_config_snapshot(config: Config, root: Path) -> Config:
         _copy_file(config.structure.file, structure)
         data["structure"]["file"] = _relative(final_inputs / "structure" / "POSCAR", root)
 
+        if config.phonon.unfolding is not None:
+            reference = temporary_inputs / "unfolding" / "SPOSCAR-Ref.vasp"
+            _copy_file(config.phonon.unfolding.reference_supercell, reference)
+            data["phonon"]["unfolding"]["reference_supercell"] = _relative(
+                final_inputs / "unfolding" / reference.name, root
+            )
+
         methods: dict[str, Any] = {}
         for name, method in config.enabled_methods.items():
             item = data["methods"][name]

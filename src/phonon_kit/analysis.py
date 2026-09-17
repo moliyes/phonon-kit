@@ -126,7 +126,14 @@ def _plot_thermal(path: Path, temperatures: np.ndarray, free_energy: np.ndarray,
     plt.close(fig)
 
 
-def analyze_method(config: Config, method_name: str, phonopy_yaml: Path, resultdir: Path) -> dict[str, Any]:
+def analyze_method(
+    config: Config,
+    method_name: str,
+    phonopy_yaml: Path,
+    resultdir: Path,
+    *,
+    unfolding_from_cache_only: bool = False,
+) -> dict[str, Any]:
     from phonopy import load
     from phonopy.physical_units import get_physical_units
 
@@ -228,6 +235,18 @@ def analyze_method(config: Config, method_name: str, phonopy_yaml: Path, resultd
         not stable,
     )
 
+    unfolding_summary = None
+    if config.phonon.unfolding is not None:
+        if unfolding_from_cache_only:
+            from .unfolding import SUMMARY_FILE, plot_unfolding
+
+            plot_unfolding(resultdir)
+            unfolding_summary = load_json(resultdir / SUMMARY_FILE)
+        else:
+            from .unfolding import run_unfolding
+
+            unfolding_summary = run_unfolding(config, phonon, resultdir)
+
     atoms = phonopy_to_ase(phonon.unitcell)
     unique_symbols, symbol_counts = np.unique(atoms.get_chemical_symbols(), return_counts=True)
     summary = {
@@ -257,6 +276,8 @@ def analyze_method(config: Config, method_name: str, phonopy_yaml: Path, resultd
             else "No significant imaginary mode below the configured threshold was found."
         ),
     }
+    if unfolding_summary is not None:
+        summary["unfolding"] = unfolding_summary
     atomic_write_json(resultdir / "summary.json", summary)
     return summary
 

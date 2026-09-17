@@ -55,6 +55,13 @@ class ThermalConfig:
 
 
 @dataclass(frozen=True)
+class UnfoldingConfig:
+    reference_supercell: Path
+    supercell_matrix: tuple[tuple[int, int, int], ...]
+    mapping_tolerance_angstrom: float = 0.2
+
+
+@dataclass(frozen=True)
 class PhononConfig:
     supercell: tuple[int, int, int] = (2, 2, 2)
     displacement_angstrom: float = 0.01
@@ -65,6 +72,7 @@ class PhononConfig:
     band: BandConfig = BandConfig()
     mesh: tuple[int, int, int] = (30, 30, 30)
     thermal: ThermalConfig = ThermalConfig()
+    unfolding: UnfoldingConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -165,6 +173,10 @@ class Config:
     def fingerprint(self) -> str:
         payload = self.resolved_dict()
         files: dict[str, str] = {"structure": sha256_file(self.structure.file)}
+        if self.phonon.unfolding is not None:
+            files["unfolding:reference_supercell"] = sha256_file(
+                self.phonon.unfolding.reference_supercell
+            )
         for name, method in self.enabled_methods.items():
             if isinstance(method, DeepMDMethod):
                 files[f"method:{name}:model"] = sha256_file(method.model)
@@ -219,6 +231,35 @@ def _triple(value: Any, where: str) -> tuple[int, int, int]:
     if any(item <= 0 for item in result):
         raise ConfigError(f"{where} 必须恰好包含三个正整数")
     return result  # type: ignore[return-value]
+
+
+def _integer_matrix3(value: Any, where: str) -> tuple[tuple[int, int, int], ...]:
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        raise ConfigError(f"{where} 必须是 3x3 整数矩阵")
+    rows: list[tuple[int, int, int]] = []
+    for row in value:
+        if not isinstance(row, (list, tuple)) or len(row) != 3:
+            raise ConfigError(f"{where} 必须是 3x3 整数矩阵")
+        parsed: list[int] = []
+        for item in row:
+            if isinstance(item, bool):
+                raise ConfigError(f"{where} 必须是 3x3 整数矩阵")
+            try:
+                integer = int(item)
+            except (TypeError, ValueError) as exc:
+                raise ConfigError(f"{where} 必须是 3x3 整数矩阵") from exc
+            if isinstance(item, float) and not item.is_integer():
+                raise ConfigError(f"{where} 必须是 3x3 整数矩阵")
+            parsed.append(integer)
+        rows.append(tuple(parsed))  # type: ignore[arg-type]
+    determinant = round(
+        rows[0][0] * (rows[1][1] * rows[2][2] - rows[1][2] * rows[2][1])
+        - rows[0][1] * (rows[1][0] * rows[2][2] - rows[1][2] * rows[2][0])
+        + rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0])
+    )
+    if determinant <= 0:
+        raise ConfigError(f"{where} 的行列式必须为正")
+    return tuple(rows)
 
 
 def _band_path(value: Any) -> Literal["auto"] | tuple[tuple[float, float, float], ...]:
@@ -285,7 +326,7 @@ def load_config(path: str | Path, *, require_inputs: bool = True) -> Config:
         {
             "supercell", "displacement_angstrom", "displacement_plusminus",
             "displacement_diagonal", "primitive", "symmetry_tolerance", "band",
-            "mesh", "thermal",
+            "mesh", "thermal", "unfolding",
         },
         "phonon",
     )
@@ -324,6 +365,29 @@ def load_config(path: str | Path, *, require_inputs: bool = True) -> Config:
         raise ConfigError("thermal 温度范围无效")
     if thermal.significant_imaginary_thz > 0:
         raise ConfigError("significant_imaginary_thz 应为 0 或负数")
+    unfolding: UnfoldingConfig | None = None
+    if "unfolding" in phonon_raw and phonon_raw["unfolding"] is not None:
+        unfolding_raw = _mapping(phonon_raw["unfolding"], "phonon.unfolding")
+        _strict(
+            unfolding_raw,
+            {"reference_supercell", "supercell_matrix", "mapping_tolerance_angstrom"},
+            "phonon.unfolding",
+        )
+        for required in ("reference_supercell", "supercell_matrix"):
+            if required not in unfolding_raw:
+                raise ConfigError(f"phonon.unfolding.{required} 为必填项")
+        tolerance = float(unfolding_raw.get("mapping_tolerance_angstrom", 0.2))
+        if not math.isfinite(tolerance) or tolerance <= 0:
+            raise ConfigError("phonon.unfolding.mapping_tolerance_angstrom 必须为正数")
+        unfolding = UnfoldingConfig(
+            reference_supercell=_resolve(base, unfolding_raw["reference_supercell"]),
+            supercell_matrix=_integer_matrix3(
+                unfolding_raw["supercell_matrix"], "phonon.unfolding.supercell_matrix"
+            ),
+            mapping_tolerance_angstrom=tolerance,
+        )
+        if band.path == "auto":
+            raise ConfigError("启用 phonon.unfolding 时必须显式设置 phonon.band.path")
     plusminus_value = phonon_raw.get("displacement_plusminus", "auto")
     if plusminus_value != "auto" and not isinstance(plusminus_value, bool):
         raise ConfigError("phonon.displacement_plusminus 必须为 auto、true 或 false")
@@ -343,6 +407,7 @@ def load_config(path: str | Path, *, require_inputs: bool = True) -> Config:
         band=band,
         mesh=_triple(phonon_raw.get("mesh", [30, 30, 30]), "phonon.mesh"),
         thermal=thermal,
+        unfolding=unfolding,
     )
     if phonon.displacement_angstrom <= 0 or phonon.symmetry_tolerance <= 0:
         raise ConfigError("displacement_angstrom 和 symmetry_tolerance 必须为正")
@@ -412,6 +477,10 @@ def load_config(path: str | Path, *, require_inputs: bool = True) -> Config:
 def validate_input_paths(config: Config) -> None:
     if not config.structure.file.is_file():
         raise ConfigError(f"结构文件不存在: {config.structure.file}")
+    if config.phonon.unfolding is not None:
+        reference = config.phonon.unfolding.reference_supercell
+        if not reference.is_file():
+            raise ConfigError(f"unfolding 参考超胞不存在: {reference}")
     for name, method in config.enabled_methods.items():
         if isinstance(method, DeepMDMethod):
             if not method.model.is_file():

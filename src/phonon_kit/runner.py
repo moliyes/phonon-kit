@@ -258,9 +258,29 @@ def replot_config(config: Config, *, paths: RunPaths | None = None) -> tuple[Run
     for name in selected:
         resultdir = paths.method_results(name)
         if (resultdir / "forces.npy").is_file():
-            analyze_method(config, name, yaml_path, resultdir)
+            analyze_method(config, name, yaml_path, resultdir, unfolding_from_cache_only=True)
     compare_methods(config, selected, paths.results)
     return paths, StateStore(paths).load()
+
+
+def unfold_run(paths: RunPaths, *, config_override: Config | None = None) -> dict[str, dict[str, Any]]:
+    from .unfolding import unfold_result
+
+    state = StateStore(paths).load()
+    config = config_override or load_config(paths.root / SNAPSHOT_CONFIG)
+    if config.phonon.unfolding is None:
+        raise RunStateError(
+            "运行快照未启用 unfolding；旧运行请使用 ph unfold <运行目录> --config <config.yaml>"
+        )
+    summaries: dict[str, dict[str, Any]] = {}
+    for name in state.get("selected_methods", []):
+        resultdir = paths.method_results(name)
+        if not (resultdir / "phonopy_params.yaml").is_file():
+            raise RunStateError(f"方法 {name} 尚无完整 phonopy_params.yaml，不能执行 unfolding")
+        summaries[name] = unfold_result(config, resultdir)
+    if not summaries:
+        raise RunStateError("运行中没有可执行 unfolding 的方法")
+    return summaries
 
 
 def status_text(paths: RunPaths, state: dict[str, Any]) -> str:
